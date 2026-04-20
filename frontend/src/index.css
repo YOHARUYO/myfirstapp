@@ -1,0 +1,60 @@
+@import "tailwindcss";
+
+@theme {
+  /* === Brand (v2: Toss Blue) === */
+  --color-primary: #3182F6;
+  --color-primary-hover: #1B64DA;
+
+  /* === Text === */
+  --color-text: #1A1A1A;
+  --color-text-secondary: #6B7280;
+  --color-text-tertiary: #9CA3AF;
+
+  /* === Background === */
+  --color-bg: #FFFFFF;
+  --color-bg-subtle: #F8F9FA;
+  --color-bg-hover: #F0F2F5;
+
+  /* === Border === */
+  --color-border: #E5E7EB;
+  --color-border-light: #F3F4F6;
+
+  /* === Status === */
+  --color-recording: #EF4444;
+  --color-success: #10B981;
+  --color-warning: #F59E0B;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-text: #92400E;
+
+  /* === Importance === */
+  --color-importance-high: #EF4444;
+  --color-importance-medium: #F59E0B;
+  --color-importance-low: #D1D5DB;
+
+  /* === Contextual === */
+  --color-template: #EFF6FF;
+  --color-missing: #FFFBEB;
+
+  /* === Typography === */
+  --font-sans: 'Pretendard Variable', 'Pretendard', 'Inter', -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+html, body {
+  overflow-x: hidden;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+}
