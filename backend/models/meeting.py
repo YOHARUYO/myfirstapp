@@ -12,6 +12,8 @@ class SlackSentInfo(BaseModel):
     thread_ts: Optional[str] = None
     message_ts: str
     sent_at: str
+    deleted: bool = False
+    deleted_at: Optional[str] = None
 
 
 class Meeting(BaseModel):

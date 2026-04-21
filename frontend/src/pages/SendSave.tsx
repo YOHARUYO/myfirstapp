@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Send, Download, Check, AlertCircle, ChevronDown, ChevronUp,
-  Loader2, Home, Clock,
+  Loader2, Home, Clock, Trash2, MessageSquare, Paperclip, Bot, User,
 } from 'lucide-react';
 import WizardLayout from '../components/wizard/WizardLayout';
 import Toast from '../components/common/Toast';
@@ -11,7 +11,7 @@ import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { getSession } from '../api/sessions';
 import api from '../api/client';
-import { listChannels, listMessages, sendSlackMessage } from '../api/slack';
+import { listChannels, listMessages, sendSlackMessage, deleteSlackMessage } from '../api/slack';
 import type { SlackChannel, SlackMessage } from '../api/slack';
 
 type SendMode = 'new' | 'thread';
@@ -45,6 +45,11 @@ export default function SendSave() {
   const [slackResult, setSlackResult] = useState<string>('');
   const [mdResult, setMdResult] = useState<string>('');
   const [completed, setCompleted] = useState(false);
+
+  // Slack delete
+  const [slackMessageTs, setSlackMessageTs] = useState<string | null>(null);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [slackDeleted, setSlackDeleted] = useState(false);
 
   // Missing metadata modal
   const [missingModal, setMissingModal] = useState(false);
@@ -147,6 +152,7 @@ export default function SendSave() {
         );
         setSlackStatus('success');
         setSlackResult(`${result.channel_name} 전송 완료`);
+        setSlackMessageTs(result.message_ts);
       } catch (e: any) {
         setSlackStatus('error');
         setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');
@@ -181,31 +187,50 @@ export default function SendSave() {
               <div className="flex items-center gap-3 text-[15px] text-text">
                 <Check size={16} className="text-success shrink-0" />
                 Slack {slackResult}
+                {slackDeleted ? (
+                  <span className="ml-auto text-xs text-text-tertiary">삭제됨</span>
+                ) : slackMessageTs && (
+                  <button
+                    onClick={() => setDeleteModal(true)}
+                    className="ml-auto text-sm text-text-tertiary hover:text-recording cursor-pointer"
+                  >
+                    삭제
+                  </button>
+                )}
               </div>
             )}
             {slackStatus === 'error' && (
               <div className="flex items-center gap-3 text-[15px] text-recording">
                 <AlertCircle size={16} className="shrink-0" />
                 Slack: {slackResult}
-                <button
-                  onClick={async () => {
-                    setSlackStatus('loading');
-                    try {
-                      const result = await sendSlackMessage(
-                        session!.session_id, selectedChannel,
-                        sendMode === 'thread' ? selectedThread : null, saveMd,
-                      );
-                      setSlackStatus('success');
-                      setSlackResult(`${result.channel_name} 전송 완료`);
-                    } catch (e: any) {
-                      setSlackStatus('error');
-                      setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');
-                    }
-                  }}
-                  className="ml-auto px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
-                >
-                  재시도
-                </button>
+                <div className="ml-auto flex gap-2">
+                  <button
+                    onClick={() => setSlackStatus('idle')}
+                    className="px-3 py-1 text-sm font-medium text-text-secondary bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+                  >
+                    건너뛰기
+                  </button>
+                  <button
+                    onClick={async () => {
+                      setSlackStatus('loading');
+                      try {
+                        const result = await sendSlackMessage(
+                          session!.session_id, selectedChannel,
+                          sendMode === 'thread' ? selectedThread : null, saveMd,
+                        );
+                        setSlackStatus('success');
+                        setSlackResult(`${result.channel_name} 전송 완료`);
+                        setSlackMessageTs(result.message_ts);
+                      } catch (e: any) {
+                        setSlackStatus('error');
+                        setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');
+                      }
+                    }}
+                    className="px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
+                  >
+                    재시도
+                  </button>
+                </div>
               </div>
             )}
             {mdStatus === 'success' && (
@@ -333,23 +358,52 @@ export default function SendSave() {
               {sendMode === 'thread' && (
                 <div>
                   <label className="text-xs font-medium text-text-secondary block mb-1">스레드 선택</label>
-                  <div className="space-y-1 max-h-[200px] overflow-y-auto">
+                  <div className="space-y-2 max-h-[300px] overflow-y-auto">
                     {threadMessages.length === 0 && (
                       <p className="text-sm text-text-tertiary py-2">최근 메시지가 없습니다</p>
                     )}
-                    {threadMessages.map((msg) => (
-                      <button
-                        key={msg.ts}
-                        onClick={() => setSelectedThread(msg.ts)}
-                        className={`w-full text-left px-3 py-2 text-sm rounded-lg cursor-pointer transition-colors ${
-                          selectedThread === msg.ts
-                            ? 'bg-primary/10 text-primary'
-                            : 'text-text hover:bg-bg-subtle'
-                        }`}
-                      >
-                        {msg.text || '(내용 없음)'}
-                      </button>
-                    ))}
+                    {threadMessages.map((msg) => {
+                      const sentDate = msg.sent_at ? new Date(msg.sent_at) : null;
+                      const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+                      const dateStr = sentDate
+                        ? `${String(sentDate.getMonth() + 1).padStart(2, '0')}/${String(sentDate.getDate()).padStart(2, '0')}(${weekdays[sentDate.getDay()]}) ${String(sentDate.getHours()).padStart(2, '0')}:${String(sentDate.getMinutes()).padStart(2, '0')}`
+                        : '';
+                      return (
+                        <button
+                          key={msg.ts}
+                          onClick={() => setSelectedThread(msg.ts)}
+                          className={`w-full text-left px-4 py-3 rounded-xl cursor-pointer transition-colors border ${
+                            selectedThread === msg.ts
+                              ? 'border-primary bg-primary/5'
+                              : 'border-border-light bg-bg-subtle hover:bg-bg-hover'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-1">
+                            <div className="flex items-center gap-1.5 text-xs font-medium text-text-secondary">
+                              {msg.is_bot ? <Bot size={12} /> : <User size={12} />}
+                              {msg.user_name}
+                            </div>
+                            <span className="text-xs text-text-tertiary">{dateStr}</span>
+                          </div>
+                          <p className="text-sm text-text truncate">
+                            {msg.text_preview || '(내용 없음)'}
+                          </p>
+                          <div className="flex items-center gap-3 mt-1">
+                            {msg.reply_count > 0 && (
+                              <span className="flex items-center gap-1 text-xs text-text-tertiary">
+                                <MessageSquare size={10} />
+                                {msg.reply_count}개 답글
+                              </span>
+                            )}
+                            {msg.has_attachments && (
+                              <span className="flex items-center gap-1 text-xs text-text-tertiary">
+                                <Paperclip size={10} />
+                              </span>
+                            )}
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -418,6 +472,38 @@ export default function SendSave() {
           </button>
         </div>
       </div>
+
+      {/* Delete Slack message modal */}
+      <Modal open={deleteModal} onClose={() => setDeleteModal(false)}>
+        <h3 className="text-lg font-semibold text-text mb-2">메시지 삭제</h3>
+        <p className="text-sm text-text-secondary mb-6">
+          Slack에서 메시지를 삭제할까요? 이 작업은 취소할 수 없습니다.
+        </p>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={() => setDeleteModal(false)}
+            className="px-4 py-2 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+          >
+            취소
+          </button>
+          <button
+            onClick={async () => {
+              setDeleteModal(false);
+              if (!slackMessageTs || !selectedChannel) return;
+              try {
+                await deleteSlackMessage(selectedChannel, slackMessageTs);
+                setSlackDeleted(true);
+                showToast('Slack 메시지가 삭제되었습니다');
+              } catch (e: any) {
+                showToast(e?.response?.data?.detail || '삭제 실패 — 이미 삭제되었거나 권한이 없습니다');
+              }
+            }}
+            className="px-4 py-2 text-sm font-medium text-bg bg-recording rounded-lg hover:opacity-90 cursor-pointer"
+          >
+            삭제
+          </button>
+        </div>
+      </Modal>
 
       {/* Missing metadata modal */}
       <Modal open={missingModal} onClose={() => setMissingModal(false)}>

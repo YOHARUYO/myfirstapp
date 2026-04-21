@@ -1,14 +1,18 @@
 import re
+from datetime import datetime
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from config import SESSIONS_DIR, SLACK_BOT_TOKEN, EXPORT_DIR
+from config import SESSIONS_DIR, MEETINGS_DIR, SLACK_BOT_TOKEN, EXPORT_DIR
 from models.session import Session
 
 router = APIRouter(prefix="/api/slack", tags=["slack"])
+
+# Cache user_id → display_name to avoid repeated API calls within a request
+_user_cache: dict[str, str] = {}
 
 
 def _get_slack_client():
@@ -25,6 +29,41 @@ def _load_session(session_id: str) -> Session:
     if not path.exists():
         raise HTTPException(status_code=404, detail="Session not found")
     return Session.model_validate_json(path.read_text(encoding="utf-8"))
+
+
+def _strip_mrkdwn(text: str) -> str:
+    """Strip Slack mrkdwn formatting to plain text."""
+    # Remove bold/italic
+    text = re.sub(r'[*_~`]', '', text)
+    # Replace user mentions <@U1234> with @user
+    text = re.sub(r'<@\w+>', '@user', text)
+    # Replace channel mentions <#C1234|name> with #name
+    text = re.sub(r'<#\w+\|([^>]+)>', r'#\1', text)
+    # Replace URLs <http://...|label> with label, or <http://...> with URL
+    text = re.sub(r'<(https?://[^|>]+)\|([^>]+)>', r'\2', text)
+    text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    return text.strip()
+
+
+def _resolve_user_name(client, user_id: str) -> tuple[str, bool]:
+    """Resolve Slack user_id to (display_name, is_bot)."""
+    if user_id in _user_cache:
+        return _user_cache[user_id], False
+
+    try:
+        info = client.users_info(user=user_id)
+        user = info.get("user", {})
+        is_bot = user.get("is_bot", False)
+        name = (
+            user.get("profile", {}).get("display_name")
+            or user.get("real_name")
+            or user.get("name")
+            or user_id
+        )
+        _user_cache[user_id] = name
+        return name, is_bot
+    except Exception:
+        return user_id, False
 
 
 @router.get("/channels")
@@ -45,19 +84,54 @@ def list_channels():
 
 @router.get("/channels/{channel_id}/messages")
 def list_messages(channel_id: str, limit: int = 20):
-    """List recent messages in a channel (for thread selection)."""
+    """List recent messages as structured card data for thread selection."""
     client = _get_slack_client()
     try:
         result = client.conversations_history(channel=channel_id, limit=limit)
-        messages = [
-            {
+        messages = []
+        for msg in result.get("messages", []):
+            if msg.get("subtype") is not None:
+                continue
+
+            user_id = msg.get("user", "")
+            is_bot = msg.get("bot_id") is not None or msg.get("subtype") == "bot_message"
+
+            if is_bot:
+                user_name = msg.get("username", "Bot")
+            elif user_id:
+                user_name, is_bot = _resolve_user_name(client, user_id)
+            else:
+                user_name = "Unknown"
+
+            # Strip mrkdwn and truncate to 50 chars
+            raw_text = msg.get("text", "")
+            text_preview = _strip_mrkdwn(raw_text)
+            if len(text_preview) > 50:
+                text_preview = text_preview[:50] + "…"
+
+            # Reply count
+            reply_count = msg.get("reply_count", 0)
+
+            # Attachments
+            has_attachments = bool(msg.get("files"))
+
+            # Timestamp → datetime string
+            try:
+                ts_float = float(msg["ts"])
+                sent_at = datetime.fromtimestamp(ts_float).isoformat()
+            except (ValueError, KeyError):
+                sent_at = ""
+
+            messages.append({
                 "ts": msg["ts"],
-                "text": msg.get("text", "")[:100],
-                "user": msg.get("user", ""),
-            }
-            for msg in result.get("messages", [])
-            if msg.get("subtype") is None  # Skip system messages
-        ]
+                "user_name": user_name,
+                "is_bot": is_bot,
+                "text_preview": text_preview,
+                "reply_count": reply_count,
+                "has_attachments": has_attachments,
+                "sent_at": sent_at,
+            })
+
         return {"messages": messages}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Slack API 오류: {str(e)}")
@@ -85,11 +159,12 @@ def _build_slack_message(session: Session, greeting: str = "") -> str:
                     summary_bullets.append(f"• {line.strip()[2:]}")
                     break
 
-    # F/U bullets from action_items
     fu_bullets = []
     for item in session.action_items:
-        line = f"• [@{item.get('assignee', '')}] {item.get('task', '')}" if item.get('assignee') else f"• {item.get('task', '')}"
-        if item.get('deadline'):
+        assignee = item.get("assignee")
+        task = item.get("task", "")
+        line = f"• [@{assignee}] {task}" if assignee else f"• {task}"
+        if item.get("deadline"):
             line += f" ~{item['deadline']}"
         fu_bullets.append(line)
 
@@ -109,7 +184,6 @@ def _build_slack_message(session: Session, greeting: str = "") -> str:
         parts.append("")
 
     parts.append("📎 전체 회의록 첨부")
-
     return "\n".join(parts)
 
 
@@ -159,7 +233,6 @@ def send_slack_message(req: SlackSendRequest):
                     thread_ts=message_ts,
                 )
 
-        # Get channel info for response
         channel_info = client.conversations_info(channel=req.channel_id)
         channel_name = channel_info.get("channel", {}).get("name", req.channel_id)
 
@@ -172,6 +245,45 @@ def send_slack_message(req: SlackSendRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Slack 전송 실패: {str(e)}")
+
+
+class SlackDeleteRequest(BaseModel):
+    channel_id: str
+    message_ts: str
+
+
+@router.delete("/message")
+def delete_slack_message(req: SlackDeleteRequest):
+    """Delete a bot-sent Slack message. Updates Meeting JSON if found."""
+    import json as _json
+
+    client = _get_slack_client()
+
+    try:
+        client.chat_delete(channel=req.channel_id, ts=req.message_ts)
+    except Exception as e:
+        error_str = str(e)
+        if "message_not_found" in error_str:
+            raise HTTPException(status_code=404, detail="이미 삭제되었거나 메시지를 찾을 수 없습니다")
+        if "cant_delete_message" in error_str or "not_authed" in error_str:
+            raise HTTPException(status_code=403, detail="삭제 권한이 없습니다 (봇이 보낸 메시지만 삭제 가능)")
+        raise HTTPException(status_code=500, detail=f"삭제 실패: {error_str}")
+
+    # Update Meeting JSON if exists
+    if MEETINGS_DIR.exists():
+        for mf in MEETINGS_DIR.glob("*.json"):
+            try:
+                data = _json.loads(mf.read_text(encoding="utf-8"))
+                slack_sent = data.get("slack_sent")
+                if slack_sent and slack_sent.get("message_ts") == req.message_ts:
+                    slack_sent["deleted"] = True
+                    slack_sent["deleted_at"] = datetime.now().isoformat()
+                    mf.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")
+                    break
+            except Exception:
+                continue
+
+    return {"success": True, "deleted_ts": req.message_ts}
 
 
 @router.get("/test")

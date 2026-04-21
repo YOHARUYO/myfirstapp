@@ -222,6 +222,34 @@ def summarize_session(session_id: str):
     }
 
 
+class UpdateSummaryRequest(BaseModel):
+    summary_markdown: str
+
+
+@router.patch("/{session_id}/summary")
+def update_summary(session_id: str, req: UpdateSummaryRequest):
+    """Save edited summary markdown (6단계 편집 확정 시)."""
+    _validate_session_id(session_id)
+    session = _load_session(session_id)
+    session.summary_markdown = req.summary_markdown
+    _save_session(session)
+    return {"ok": True}
+
+
+class UpdateActionItemsRequest(BaseModel):
+    action_items: list
+
+
+@router.patch("/{session_id}/action-items")
+def update_action_items(session_id: str, req: UpdateActionItemsRequest):
+    """Save edited action items (6단계 편집 확정 시)."""
+    _validate_session_id(session_id)
+    session = _load_session(session_id)
+    session.action_items = req.action_items
+    _save_session(session)
+    return {"ok": True}
+
+
 @router.post("/{session_id}/export-md")
 def export_md(session_id: str):
     """Generate and save .md file from session summary + transcript."""

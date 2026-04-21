@@ -9,8 +9,7 @@ import Toast from '../components/common/Toast';
 import Modal from '../components/common/Modal';
 import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { summarizeSession, getSession } from '../api/sessions';
-import api from '../api/client';
+import { summarizeSession, getSession, updateSummaryMarkdown, updateActionItems } from '../api/sessions';
 import type { ActionItem } from '../types';
 
 function formatTs(seconds: number): string {
@@ -145,15 +144,13 @@ export default function Summary() {
 
   const showToast = (message: string) => setToast({ message, visible: true });
 
-  // Save summary to server
+  // Save summary to server via dedicated APIs
   const saveSummary = async (blocks: typeof summaryBlocks, items: ActionItem[]) => {
     if (!session) return;
     const md = rebuildMarkdown(titleLine, blocks);
     try {
-      await api.patch(`/sessions/${session.session_id}/metadata`, {
-        summary_markdown: md,
-        action_items: items,
-      });
+      await updateSummaryMarkdown(session.session_id, md);
+      await updateActionItems(session.session_id, items);
     } catch {}
   };
 

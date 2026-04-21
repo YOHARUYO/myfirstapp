@@ -7,8 +7,12 @@ export interface SlackChannel {
 
 export interface SlackMessage {
   ts: string;
-  text: string;
-  user: string;
+  user_name: string;
+  is_bot: boolean;
+  text_preview: string;
+  reply_count: number;
+  has_attachments: boolean;
+  sent_at: string;
 }
 
 export async function listChannels(): Promise<SlackChannel[]> {
@@ -39,6 +43,16 @@ export async function sendSlackMessage(
     channel_id: channelId,
     thread_ts: threadTs || null,
     attach_md: attachMd,
+  });
+  return res.data;
+}
+
+export async function deleteSlackMessage(
+  channelId: string,
+  messageTs: string,
+): Promise<{ success: boolean; deleted_ts: string }> {
+  const res = await api.delete('/slack/message', {
+    data: { channel_id: channelId, message_ts: messageTs },
   });
   return res.data;
 }

@@ -71,9 +71,10 @@ export async function summarizeSession(sessionId: string): Promise<SummarizeResu
   return res.data;
 }
 
-export async function updateSummary(sessionId: string, data: {
-  summary_markdown?: string;
-  action_items?: ActionItem[];
-}): Promise<void> {
-  await api.patch(`/sessions/${sessionId}/metadata`, data);
+export async function updateSummaryMarkdown(sessionId: string, summaryMarkdown: string): Promise<void> {
+  await api.patch(`/sessions/${sessionId}/summary`, { summary_markdown: summaryMarkdown });
+}
+
+export async function updateActionItems(sessionId: string, actionItems: ActionItem[]): Promise<void> {
+  await api.patch(`/sessions/${sessionId}/action-items`, { action_items: actionItems });
 }

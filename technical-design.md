@@ -448,13 +448,43 @@ myfirstapp/
 }
 ```
 
-### 4-5. AI (Claude)
+### 4-5. 요약 편집 (6단계)
+| Method | Endpoint | 설명 |
+|--------|----------|------|
+| `PATCH` | `/api/sessions/{id}/summary` | 요약 마크다운 저장 (6단계 편집 확정 시) |
+| `PATCH` | `/api/sessions/{id}/action-items` | 액션 아이템 목록 저장 (6단계 편집 확정 시) |
+
+**`PATCH /api/sessions/{id}/summary` 요청 바디**:
+```json
+{
+  "summary_markdown": "# 260416(수) 정기 회의\n\n## 회의 개요\n..."
+}
+```
+
+**`PATCH /api/sessions/{id}/action-items` 요청 바디**:
+```json
+{
+  "action_items": [
+    {
+      "fu_id": "fu_001",
+      "assignee": "김OO",
+      "task": "보고서 초안 작성",
+      "deadline": "2026-04-20",
+      "source_topic": "1. AI Agent 개발 현황"
+    }
+  ]
+}
+```
+
+> **Slack 메시지와의 데이터 정합성**: `POST /api/slack/send` 호출 시 서버는 세션(또는 미팅)의 **최신 `summary_markdown` + `action_items`**를 실시간으로 읽어 메시지를 조립. 미리 캐싱하거나 사전 생성하지 않음. 따라서 6단계에서 요약을 수정하고 저장한 뒤 7단계에서 전송하면 수정 내용이 반영됨.
+
+### 4-6. AI (Claude)
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `POST` | `/api/sessions/{id}/tag` | AI 중요도 태깅 (미태깅 블록만, 사용자 태그 불변, idempotent — 초기 태깅과 재태깅 동일 엔드포인트) |
 | `POST` | `/api/sessions/{id}/summarize` | AI 요약 생성 + 회의 개요 자동 조립 |
 
-### 4-6. 히스토리
+### 4-7. 히스토리
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `GET` | `/api/meetings` | 회의 목록 (최신순) |
@@ -487,7 +517,7 @@ myfirstapp/
 | `POST` | `/api/meetings/{id}/export-md` | .md 파일 재생성 (재편집 후) |
 | `POST` | `/api/meetings/{id}/resend-slack` | Slack 재전송 (다른 채널/스레드 선택 가능) |
 
-### 4-7. Slack
+### 4-8. Slack
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `GET` | `/api/slack/channels` | 봇이 참여한 채널 목록 |
@@ -569,7 +599,7 @@ myfirstapp/
 }
 ```
 
-### 4-8. 템플릿 / 주소록 / 설정
+### 4-9. 템플릿 / 주소록 / 설정
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `GET/POST/PATCH/DELETE` | `/api/templates[/{id}]` | 템플릿 CRUD |
@@ -577,11 +607,44 @@ myfirstapp/
 | `GET/POST/PATCH/DELETE` | `/api/contacts/locations[/{id}]` | 장소 CRUD |
 | `GET/PATCH` | `/api/settings` | 설정 조회/수정 |
 
-### 4-9. 복구
+### 4-10. 복구
 | Method | Endpoint | 설명 |
 |--------|----------|------|
-| `GET` | `/api/recovery` | 복구 가능 세션 목록 (status가 completed가 아닌 세션) |
-| `POST` | `/api/recovery/{session_id}/restore` | 세션 복구 → 오디오 청크 병합 후 4단계로 진입 |
+| `GET` | `/api/recovery` | 복구 가능 세션 목록 (status가 completed가 아닌 세션, 메타데이터+status 포함) |
+
+> **복구 = 기존 세션 재개**: 별도 restore API 없음. 프론트엔드가 `GET /api/recovery`로 미완료 세션 목록을 확인하고, 사용자가 "이어서 진행" 선택 시 `GET /api/sessions/{id}`로 세션 데이터를 로드한 뒤 status에 따라 해당 단계로 라우팅. 새 세션을 생성하지 않으므로 동시 세션 409 충돌이 발생하지 않음.
+
+**`GET /api/recovery` 응답 바디**:
+```json
+{
+  "sessions": [
+    {
+      "session_id": "session_20260421_140000",
+      "status": "post_recording",
+      "metadata": {
+        "title": "정기 회의",
+        "date": "2026-04-21",
+        "participants": ["김OO", "박OO"],
+        "location": "3층 회의실 A"
+      },
+      "created_at": "2026-04-21T14:00:00",
+      "block_count": 42,
+      "audio_chunk_count": 120
+    }
+  ]
+}
+```
+
+**복구 시 프론트엔드 라우팅 매핑**:
+| status | 라우팅 대상 |
+|--------|-----------|
+| `idle` | `/meeting-setup` (2단계) |
+| `recording` / `post_recording` | `/recording` (3단계, post_recording 상태) |
+| `processing` | `/processing` (4단계, 처리 재시작) |
+| `editing` | `/editing` (5단계) |
+| `summarizing` | `/summary` (6단계) |
+
+**"삭제하고 새로 시작"**: `DELETE /api/sessions/{id}` (기존 API) 호출 후 새 회의 시작 가능.
 
 ---
 

@@ -72,6 +72,8 @@ export interface SlackSentInfo {
   thread_ts: string | null;
   message_ts: string;
   sent_at: string;
+  deleted: boolean;
+  deleted_at: string | null;
 }
 
 export interface Meeting {
