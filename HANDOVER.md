@@ -185,7 +185,7 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 3단계 녹음: 회의 정보 요약 패널(편집가능/접기), 화자 슬롯(빈 원), 중요도 바+팝오버(4색+미지정), 마이크 레벨 미터, 빈 구간 표시(⏸), 키보드 단축키(1/2/3/4/0/↑/↓/Enter), 더블클릭 편집, Web Speech 문장 합산 표시, 중복 블록 방지(abort 기반)
 - 백엔드 안정성: asyncio Lock(동시 쓰기 방지), to_thread(비동기 I/O), uuid4 ID, path traversal 검증, OOM 방지(청크 단위 업로드), API 키 마스킹, DELETE 404 처리
 - 공통: Toast(ref 패턴), TagInput(v2 스타일), audioBitsPerSecond 128000, stopRecording Promise화
-- 상세: `DEV-REPORT-20260417.md` 참조
+- 상세: `reports/DEV-REPORT-20260417.md` 참조
 
 ### 다음 할 일: Sprint 3
 - 4단계 Whisper 처리 (ffmpeg 병합 + Whisper 실행 + 블록 병합)
@@ -197,7 +197,7 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 기획 변경 반영: is_edited 원본 비교, interim 클릭→강제 확정(flush), 싱글클릭 분할 삭제
 - Wizard 네비게이션: 홈 아이콘+모달, 이전 단계 버튼, 단계별 규칙, Modal 공통 컴포넌트
 - UI: 가로 스크롤 제거
-- 상세: `DEV-REPORT-20260420.md` 참조
+- 상세: `reports/DEV-REPORT-20260420.md` 참조
 
 ### 알려진 이슈
 - 마이크 끊김 → 자동 post_recording 전환: 미구현 (Sprint 5 백그라운드 탭 대응과 함께)
@@ -216,8 +216,13 @@ myfirstapp/
 ├── HANDOVER.md              ← 이 파일 (인수인계 문서)
 ├── decisions.md             ← UX/기능 기획서
 ├── technical-design.md      ← 기술 설계서 + 디자인 시스템
-├── design-system.md         ← 디자인 시스템 별도 문서
+├── design-system.md         ← 디자인 시스템 (라이트, v2)
+├── design-system-dark.md    ← 디자인 시스템 (다크모드)
 ├── .gitignore
+├── reports/                 ← 세션별 업무 보고서 (아래 "리포트 규칙" 참조)
+│   ├── PLAN-REPORT-YYYYMMDD.md
+│   ├── DEV-REPORT-YYYYMMDD.md
+│   └── QA-REPORT-YYYYMMDD.md
 ├── backend/
 │   ├── .env                 ← API 키, Slack 토큰
 │   ├── main.py              ← FastAPI 앱 엔트리
@@ -247,7 +252,7 @@ myfirstapp/
 
 ## 10. 세션 역할 구분
 
-이 프로젝트는 **기획 세션**과 **개발 세션** 2개의 Claude Code 세션으로 운영됩니다.
+이 프로젝트는 **기획 세션**, **개발 세션**, **검수(QA) 세션** 3개의 Claude Code 세션으로 운영됩니다.
 
 ### 역할 정의
 
@@ -255,6 +260,7 @@ myfirstapp/
 |------|------|----------|---------------|
 | **기획 세션** | 기획·설계 | UX 결정, 설계 변경, 디자인 시스템 조정, 기능 논의 | `decisions.md`, `technical-design.md`, `design-system.md` |
 | **개발 세션** | 코드 구현 | 기획 문서 기반 코드 작성, 테스트, 디버깅 | `backend/`, `frontend/` |
+| **검수(QA) 세션** | 품질 검증 | 기획 문서 기준 코드 전수 검사, 불일치·버그 보고 | `reports/QA-REPORT-*.md` (코드 직접 수정 안 함) |
 
 ### 인수인계 방향
 
@@ -331,7 +337,53 @@ myfirstapp/
 
 ---
 
-## 11. 새 세션에서 시작하는 방법
+## 11. 리포트 규칙
+
+### 파일 위치
+모든 세션 리포트는 `reports/` 폴더에 저장.
+
+### 네이밍 컨벤션
+
+| 세션 | 파일명 패턴 | 예시 |
+|------|------------|------|
+| 기획 | `PLAN-REPORT-YYYYMMDD.md` | `PLAN-REPORT-20260420.md` |
+| 개발 | `DEV-REPORT-YYYYMMDD.md` | `DEV-REPORT-20260420.md` |
+| 검수(QA) | `QA-REPORT-YYYYMMDD.md` | `QA-REPORT-20260420.md` |
+
+### 공통 양식
+
+```markdown
+# {기획/개발/검수} 업무 보고서 — YYYY-MM-DD
+
+> 작성 주체: {기획/개발/검수} 세션
+> 대상 기간: YYYY-MM-DD (N번째 {기획/개발/검수} 세션)
+> 이전 보고서: `reports/{TYPE}-REPORT-YYYYMMDD.md`
+
+---
+
+## 1. 오늘 수행한 작업 요약
+(카테고리 | 건수 | 요약 표)
+
+## 2. 변경된 파일 목록
+(파일 | 변경 유형 | 상세 표)
+
+## 3. 주요 결정/변경 사항
+(세션 유형에 따라: 기획=결정 사항, 개발=기술 결정, QA=발견 이슈)
+
+## 4. 전달 사항
+(다른 세션에 전달할 내용)
+
+## 5. 다음 세션에서 확인할 것
+(후속 작업 목록)
+```
+
+### 작성 시점
+- **세션 종료 시** 반드시 리포트 작성
+- 같은 날짜에 동일 세션이 2회 이상이면 `-2` 접미사 (`DEV-REPORT-20260420-2.md`)
+
+---
+
+## 12. 새 세션에서 시작하는 방법
 
 ### 기획 세션
 1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동 로드됨
@@ -339,6 +391,7 @@ myfirstapp/
 3. "기획→개발 전달 사항"을 확인하고, "개발→기획 전달 사항"에 답변
 4. 기획 논의 후 변경사항을 decisions.md / technical-design.md에 반영
 5. 개발에 전달할 내용이 있으면 "기획→개발 전달 사항"에 기록
+6. **세션 종료 시 `reports/PLAN-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조)
 
 ### 개발 세션
 1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동 로드됨
@@ -346,3 +399,11 @@ myfirstapp/
 3. "기획→개발 전달 사항"을 확인하고 코드에 반영
 4. dev server 시작: 백엔드 `cd backend && uvicorn main:app --reload --port 8000`, 프론트엔드 `cd frontend && npm run dev`
 5. 구현 중 설계 이슈 발견 시 "개발→기획 전달 사항"에 기록
+6. **세션 종료 시 `reports/DEV-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조)
+
+### 검수(QA) 세션
+1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동 로드됨
+2. 첫 메시지: **"HANDOVER.md를 읽어줘. 검수 세션이야."**
+3. 기획 문서(decisions.md, technical-design.md) 기준으로 코드 전수 검사
+4. 발견 이슈를 심각도별로 분류하여 보고
+5. **세션 종료 시 `reports/QA-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조)

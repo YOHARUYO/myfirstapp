@@ -279,7 +279,9 @@ myfirstapp/
     "channel_name": "#team-meeting",
     "thread_ts": null,
     "message_ts": "1713267000.000100",
-    "sent_at": "2026-04-16T15:30:00"
+    "sent_at": "2026-04-16T15:30:00",
+    "deleted": false,
+    "deleted_at": null
   },
   "local_file_path": "C:\\...\\meetings\\정기_회의_20260416.md",
   "merged_audio_path": "data/meetings/mtg_20260416_143022.webm"
@@ -489,8 +491,9 @@ myfirstapp/
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `GET` | `/api/slack/channels` | 봇이 참여한 채널 목록 |
-| `GET` | `/api/slack/channels/{id}/messages?limit=20` | 채널 최근 메시지 (스레드 선택용) |
+| `GET` | `/api/slack/channels/{id}/messages?limit=20` | 채널 최근 메시지 (스레드 선택용, 가공된 카드 데이터) |
 | `POST` | `/api/slack/send` | 메시지 전송 (+ .md 파일 첨부, 아래 요청 바디 참조) |
+| `DELETE` | `/api/slack/message` | 봇이 보낸 Slack 메시지 삭제 (`chat.delete`) |
 | `GET` | `/api/slack/test` | 연결 테스트 |
 
 **`POST /api/slack/send` 요청 바디**:
@@ -515,6 +518,54 @@ myfirstapp/
   "channel_name": "#team-meeting",
   "message_ts": "1713267000.000100",
   "thread_ts": null
+}
+```
+
+**`GET /api/slack/channels/{id}/messages` 응답 바디** (서버에서 가공):
+```json
+{
+  "messages": [
+    {
+      "ts": "1713434000.000100",
+      "user_name": "meetingRecorder",
+      "is_bot": true,
+      "text_preview": "[04/18(금) 14:00 정기 회의] 오늘 진행된 회…",
+      "reply_count": 3,
+      "has_attachments": true,
+      "sent_at": "2026-04-18T14:32:00"
+    },
+    {
+      "ts": "1713347400.000200",
+      "user_name": "김OO",
+      "is_bot": false,
+      "text_preview": "다음 주 일정 공유드립니다. 월요일…",
+      "reply_count": 7,
+      "has_attachments": false,
+      "sent_at": "2026-04-17T10:15:00"
+    }
+  ]
+}
+```
+- `text_preview`: 서버에서 Slack mrkdwn(`*bold*`, `<@U1234>` 등) 스트립 후 50자 이내로 잘라서 전달
+- `user_name`: 서버에서 `users.info` API로 display_name 매핑 (프론트에서 추가 호출 불필요)
+- `is_bot`: 봇 메시지 여부 (프론트에서 🤖/👤 아이콘 분기용)
+
+**`DELETE /api/slack/message` 요청 바디**:
+```json
+{
+  "channel_id": "C1234567",
+  "message_ts": "1713267000.000100"
+}
+```
+- `chat.delete` API 호출. 봇이 보낸 메시지만 삭제 가능
+- 성공 시: Meeting JSON의 `slack_sent.deleted = true`, `slack_sent.deleted_at` 기록
+- 실패 시: 404 또는 403 반환 (이미 삭제됨 / 권한 없음)
+
+**`DELETE /api/slack/message` 응답 바디**:
+```json
+{
+  "success": true,
+  "deleted_ts": "1713267000.000100"
 }
 ```
 

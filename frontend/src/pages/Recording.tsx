@@ -10,7 +10,7 @@ import { useTimer } from '../hooks/useTimer';
 import { useAudioStream } from '../hooks/useAudioStream';
 import { useWebSpeech } from '../hooks/useWebSpeech';
 import { formatTimestamp } from '../utils/formatTime';
-import { updateMetadata } from '../api/sessions';
+import { updateMetadata, stopRecording, resumeRecording } from '../api/sessions';
 import { listParticipants, listLocations, addParticipant, addLocation } from '../api/contacts';
 import type { Block, ImportanceLevel } from '../types';
 import type { Contact } from '../api/contacts';
@@ -28,7 +28,7 @@ const IMPORTANCE_OPTIONS: { level: ImportanceLevel | null; color: string; label:
   { level: 'medium', color: 'bg-importance-medium', label: '중' },
   { level: 'low', color: 'bg-importance-low', label: '하' },
   { level: 'lowest', color: 'bg-transparent border border-border', label: '최하' },
-  { level: null, color: 'bg-white border border-border', label: '미지정' },
+  { level: null, color: 'bg-bg border border-border', label: '미지정' },
 ];
 
 interface GapMarker {
@@ -349,6 +349,10 @@ export default function Recording() {
     stoppedAtRef.current = Date.now();
     setInterimText('');
     setRecordingState('post_recording');
+    // Sync status to server
+    if (session) {
+      try { await stopRecording(session.session_id); } catch {}
+    }
   };
 
   const handleResumeRecording = async () => {
@@ -358,6 +362,8 @@ export default function Recording() {
       if (lastBlock && gapSeconds > 0) {
         setGaps((prev) => [...prev, { type: 'gap', after_block_id: lastBlock.block_id, gap_seconds: gapSeconds }]);
       }
+      // Sync status to server
+      if (session) await resumeRecording(session.session_id);
       audioStream.sendResumed(gapSeconds);
       const stream = await audioStream.startRecording();
       if (stream) startMicLevel(stream);
@@ -437,7 +443,7 @@ export default function Recording() {
                   value={metaTitle}
                   onChange={(e) => setMetaTitle(e.target.value)}
                   onBlur={saveMetadata}
-                  className="w-full bg-white rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                  className="w-full bg-bg rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                 />
               </div>
               <div>
@@ -457,7 +463,7 @@ export default function Recording() {
                   onChange={(e) => setMetaLocation(e.target.value)}
                   onBlur={saveMetadata}
                   list="rec-location-suggestions"
-                  className="w-full bg-white rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+                  className="w-full bg-bg rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
                 />
                 <datalist id="rec-location-suggestions">
                   {contactLocations.map((l) => <option key={l.id} value={l.name} />)}
@@ -532,7 +538,7 @@ export default function Recording() {
                       }}
                     />
                     {popoverBlockId === block.block_id && (
-                      <div className="absolute left-3 top-0 z-20 flex gap-1 bg-white rounded-lg shadow-lg p-1.5 border border-border" onClick={(e) => e.stopPropagation()}>
+                      <div className="absolute left-3 top-0 z-20 flex gap-1 bg-bg rounded-lg shadow-lg p-1.5 border border-border" onClick={(e) => e.stopPropagation()}>
                         {IMPORTANCE_OPTIONS.map((opt) => (
                           <button
                             key={opt.label}
@@ -561,7 +567,7 @@ export default function Recording() {
                         if (e.key === 'Escape') handleEditCancel();
                       }}
                       onBlur={handleEditConfirm}
-                      className="flex-1 text-[15px] text-text leading-relaxed bg-white ring-2 ring-primary rounded-lg px-3 py-1 resize-none focus:outline-none"
+                      className="flex-1 text-[15px] text-text leading-relaxed bg-bg ring-2 ring-primary rounded-lg px-3 py-1 resize-none focus:outline-none"
                       rows={Math.max(1, Math.ceil(editingText.length / 60))}
                     />
                   ) : (

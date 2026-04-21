@@ -25,3 +25,6 @@ class Session(BaseModel):
     blocks: List[Block] = Field(default_factory=list)
     recording_gaps: List[RecordingGap] = Field(default_factory=list)
     ai_tagging_skipped: bool = False
+    summary_markdown: str = ""
+    action_items: List[dict] = Field(default_factory=list)
+    keywords: List[str] = Field(default_factory=list)

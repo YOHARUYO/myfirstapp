@@ -210,8 +210,8 @@ export default function MeetingSetup() {
     }
   };
 
-  const inputBaseClass = 'w-full bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-white focus:ring-2 focus:ring-primary focus:outline-none transition-colors';
-  const inputFilledClass = 'w-full bg-template rounded-lg px-4 py-3 text-[15px] focus:bg-white focus:ring-2 focus:ring-primary focus:outline-none transition-colors';
+  const inputBaseClass = 'w-full bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none transition-colors';
+  const inputFilledClass = 'w-full bg-template rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none transition-colors';
 
   return (
     <WizardLayout prevRoute="/">
@@ -331,7 +331,7 @@ export default function MeetingSetup() {
               }}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-md transition-colors cursor-pointer ${
                 inputMode === 'realtime'
-                  ? 'bg-white text-text shadow-sm'
+                  ? 'bg-bg text-text shadow-sm'
                   : 'text-text-secondary hover:text-text'
               }`}
             >
@@ -342,7 +342,7 @@ export default function MeetingSetup() {
               onClick={() => setInputMode('upload')}
               className={`flex-1 flex items-center justify-center gap-2 py-2.5 text-sm font-medium rounded-md transition-colors cursor-pointer ${
                 inputMode === 'upload'
-                  ? 'bg-white text-text shadow-sm'
+                  ? 'bg-bg text-text shadow-sm'
                   : 'text-text-secondary hover:text-text'
               }`}
             >

@@ -46,7 +46,7 @@ export default function TagInput({ values, onChange, suggestions, placeholder, h
       <div
         className={`flex flex-wrap gap-1.5 px-4 py-3 rounded-lg min-h-[46px] items-center cursor-text transition-colors ${
           highlighted ? 'bg-template' : 'bg-bg-subtle'
-        } focus-within:bg-white focus-within:ring-2 focus-within:ring-primary`}
+        } focus-within:bg-bg focus-within:ring-2 focus-within:ring-primary`}
         onClick={() => inputRef.current?.focus()}
       >
         {values.map((v) => (

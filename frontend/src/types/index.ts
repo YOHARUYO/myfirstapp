@@ -53,6 +53,9 @@ export interface Session {
   blocks: Block[];
   recording_gaps: RecordingGap[];
   ai_tagging_skipped: boolean;
+  summary_markdown: string;
+  action_items: ActionItem[];
+  keywords: string[];
 }
 
 export interface ActionItem {

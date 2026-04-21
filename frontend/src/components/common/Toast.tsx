@@ -28,7 +28,7 @@ export default function Toast({ message, visible, onHide, duration = 3000 }: Pro
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50">
       <div
-        className={`px-4 py-2.5 bg-text text-white text-sm rounded-lg shadow-lg transition-all duration-300 ${
+        className={`px-4 py-2.5 bg-toast-bg text-toast-text text-sm rounded-lg shadow-lg transition-all duration-300 ${
           show ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-2'
         }`}
       >
