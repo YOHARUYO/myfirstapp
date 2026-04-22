@@ -168,43 +168,133 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ---
 
-## 8. 현재 구현 완료 항목
+## 8. 현재 구현 완료 항목 (2026-04-22 기준)
 
-### Sprint 1 (기반 구조) ✅
-- 백엔드: FastAPI 앱(main.py), config.py, Pydantic 모델 6종(Block, Session, Meeting, Template, Settings, Contacts)
-- 백엔드 라우터: sessions, audio(WebSocket+업로드), history, templates, contacts, recovery, settings
-- 프론트엔드: Vite + React 18 + TypeScript + Tailwind v4 + React Router + Zustand
-- 디자인 시스템 적용: **v2 Toss-style Bold Editorial** (`design-system.md` 참조)
-- Primary 색상: `#3182F6` (Toss 블루)
-- `design-system.md` 문서 v2 개편 완료
+> **마지막 업데이트**: 2026-04-22 개발 세션 종료 시점
+> **최신 커밋**: `47027ca`
 
-### Sprint 2 (핵심 플로우) ✅ + 검수 완료
-- 1단계 홈: v2 스타일, 복구 배너(참여자 표시+이어가기+삭제)
-- Wizard Stepper + WizardLayout
-- 2단계 회의 정보: v2 스타일(bg-bg-subtle 입력, focus ring), 마이크 권한 사전 체크, 장소 inline creation, 파일 업로드 서버 전송
-- 3단계 녹음: 회의 정보 요약 패널(편집가능/접기), 화자 슬롯(빈 원), 중요도 바+팝오버(4색+미지정), 마이크 레벨 미터, 빈 구간 표시(⏸), 키보드 단축키(1/2/3/4/0/↑/↓/Enter), 더블클릭 편집, Web Speech 문장 합산 표시, 중복 블록 방지(abort 기반)
-- 백엔드 안정성: asyncio Lock(동시 쓰기 방지), to_thread(비동기 I/O), uuid4 ID, path traversal 검증, OOM 방지(청크 단위 업로드), API 키 마스킹, DELETE 404 처리
-- 공통: Toast(ref 패턴), TagInput(v2 스타일), audioBitsPerSecond 128000, stopRecording Promise화
-- 상세: `reports/DEV-REPORT-20260417.md` 참조
+### Sprint 1~5 전체 완료 ✅
 
-### 다음 할 일: Sprint 3
-- 4단계 Whisper 처리 (ffmpeg 병합 + Whisper 실행 + 블록 병합)
-- 5단계 편집 화면 (블록 편집, 중요도 태깅, 일괄 치환)
-- backend/services/ 구현 시작 (audio_service, whisper_service, merger_service, claude_service)
+모든 스프린트 구현이 완료되었으며, QA 전수 조사 + 기획 변경 반영까지 마무리된 상태.
 
-### Sprint 2 추가 작업 (2026-04-20) ✅
-- Web Speech 안정화: abort 기반 중복 방지 확정, VB-Cable 환경 진단/해결
-- 기획 변경 반영: is_edited 원본 비교, interim 클릭→강제 확정(flush), 싱글클릭 분할 삭제
-- Wizard 네비게이션: 홈 아이콘+모달, 이전 단계 버튼, 단계별 규칙, Modal 공통 컴포넌트
-- UI: 가로 스크롤 제거
-- 상세: `reports/DEV-REPORT-20260420.md` 참조
+### 1단계 홈 (~98%)
+- 복구 카드형 배너 (status별 라우팅 + "이어서 진행" + "삭제하고 새로 시작")
+- 복구 세션 존재 시 "새 회의 시작" 비활성 + 안내
+- 최근 회의 5건 표시, API 에러 상태 + 다시 시도
 
-### 알려진 이슈
-- 마이크 끊김 → 자동 post_recording 전환: 미구현 (Sprint 5 백그라운드 탭 대응과 함께)
-- 복구 "이어가기": 라우팅만 연결, 실제 복구 로직은 Sprint 5
-- Web Speech abort 방식: 1.5초 침묵 후 abort+restart로 단어 일부 누락 가능 (Whisper가 보완)
-- 6→5→6 재요약 모달: Sprint 4에서 6단계 구현 시
-- 브라우저 뒤로가기 동기화: Sprint 5
+### 2단계 회의 정보 (~97%)
+- 템플릿 선택 + 빠른 시작, 마이크 권한 사전 체크
+- 입력 소스 세그먼트 (실시간/업로드), 파일 드롭존
+- 하단 네비 바 (WizardLayout nextSlot)
+
+### 3단계 녹음 (~97%)
+- Web Speech 안정화: onerror 분기, no-speech 지수 backoff, instanceIdRef, onStatusChange 콜백
+- 녹음 FAB (sticky bottom-16 좌측, idle/recording/post_recording 상시 표시)
+- 마이크 민감도 슬라이더 (GainNode 파이프라인, 실시간 조절)
+- 블록 편집: 더블클릭, Shift+Enter=줄바꿈, Ctrl+Enter=분할, Backspace/Delete 병합 (첫/마지막 가드)
+- 편집 확정 시 서버 PATCH 호출 (block_id 동기화)
+- 수정 마크: 타임스탬프 색상 변경 + 아이콘 세로 스택
+- whitespace-pre-wrap으로 줄바꿈 렌더링
+- 복구 진입 시 기존 블록 로드 + 인라인 배너
+- sticky 상태바(top) + beforeunload + popstate 차단
+- 백그라운드 탭: useSilentAudio + useVisibility + 조건부 토스트
+
+### 4단계 Whisper (~90%)
+- Whisper 스킵 선택 화면 (realtime 모드: [처리 시작] / [건너뛰기], upload 모드: 자동 시작)
+- 진행률 단계별 체크리스트, 예상 잔여 시간
+- 에러 재시도 + "Web Speech 결과만으로 계속" 폴백
+- Whisper 패키지 미설치 (MacBook 배포 시 설치 예정)
+
+### 5단계 편집 (~97%)
+- 블록 편집/분할/병합, 중요도 태깅 (팝오버 + 키보드 1/2/3/4/0)
+- AI 재태깅 로딩 스피너, 5→6 전환 로딩 오버레이
+- 요약 생략 모달 (5→7 직행 옵션)
+- 일괄 치환 (잠금 제외), Undo/Redo
+- 메타데이터 편집 (blur 저장), 핵심만 토글
+- 5단계 진입 시 서버 최신 블록 fetch
+- editMode 분기 (session/meeting API 경로 자동 전환)
+- 섹션 위계 강화 (서브텍스트 + bg-bg-subtle 래핑)
+- importance API 실패 시 롤백
+
+### 6단계 요약 (~97%)
+- Claude Sonnet 요약 생성 + 회의 개요 자동 조립
+- 전체 화면 로딩 오버레이
+- 블록 편집 (더블클릭, WYSIWYG-like)
+- 액션 아이템 CRUD (@assignee ~deadline 파싱)
+- 재요약 버튼 + 6→5→6 재진입 모달
+- 전사 참조 패널 (접힘)
+- 전용 저장 API (PATCH /summary + /action-items)
+
+### 7단계 전송 (~97%)
+- Slack 채널/스레드 선택 (카드형 메시지 목록 + 로딩 스피너)
+- .md export + 폴더 선택 (showDirectoryPicker, 미지원 시 prompt 폴백)
+- 체크박스 실행 (.md → Slack → complete 순서)
+- 미입력 메타데이터 모달
+- 완료 화면: 결과 표시 + Slack 메시지 삭제 버튼 + 재시도 + 건너뛰기
+- 미리보기 최신 데이터 fetch
+- 더블 클릭 가드
+
+### 히스토리 (~97%)
+- 목록 (카드 리스트, 최신순) + 전문 검색 + 기간 필터
+- 검색 스니펫 (±30자, 필드별 하이라이트)
+- 상세: 요약+F/U, 전사 원본 (절대/상대 시각 토글)
+- Slack 전송 이력 + 메시지 삭제
+- 재편집 (Meeting→Session 변환 + editMode 분기)
+- 재전송, .md 다운로드
+- 회의록 삭제 (DELETE /meetings/{id} + 확인 모달)
+- Meeting 블록 편집 API 4종 (split, merge, patch, importance)
+- resummarize API
+
+### 설정 (~95%)
+- 테마 3-way 세그먼트 (시스템/라이트/다크 + Sun/Moon/Monitor 아이콘)
+- 템플릿 CRUD (모달 + Slack 채널 드롭다운 + 삭제 확인 모달)
+- 주소록 (참여자/장소 추가/삭제)
+- 연동 (Slack 토큰 변경/연결 테스트, Claude API 키 변경, Whisper 모델 드롭다운)
+- 토큰 마스킹 표시
+- Slack 인사 문구 textarea (여러 줄 + 이모티콘)
+- 기본 저장 경로 (showDirectoryPicker)
+- 마이크 민감도 기본값 (settings.json mic_sensitivity)
+
+### 다크모드 (~95%)
+- CSS 변수 오버라이드 (prefers-color-scheme + data-theme)
+- FOUC 방지 인라인 스크립트
+- theme.ts 유틸 (getTheme/setTheme/applyTheme)
+- bg-white 하드코딩 전수 교체 → 시맨틱 토큰
+- toast/backdrop 전용 토큰
+
+### 공통 인프라
+- WizardLayout: nextSlot (하단 네비 Secondary+Primary 대칭), prevRoute, homeDisabled
+- 반응형 Stepper (768px 미만 축약)
+- Web Speech: onerror 분기, no-speech backoff, instanceIdRef
+- useAudioStream: GainNode 파이프라인
+- useSilentAudio + useVisibility
+- formatTs 공통 함수 (4파일 통합)
+- Modal 포커스 복귀
+- asyncio.Lock (contacts, templates)
+- block_id 클라이언트-서버 동기화
+
+### 알려진 미구현/미완
+| 항목 | 상태 |
+|------|------|
+| Whisper 패키지 설치 | MacBook 배포 시 |
+| 마이크 끊김 → 자동 post_recording | 미구현 |
+| B-2 ④ 타이머 보정 | useTimer가 Date.now() 기반이면 불필요 |
+| B-2 ⑤ Web Worker | MVP 선택적 |
+
+### 기획→개발 전달 사항
+
+**(2026-04-22 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+
+이전 전달 사항 3건:
+1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅ 반영 완료
+2. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅ 반영 완료
+3. `reports/PLAN-REPORT-20260422.md` 8절 — ✅ 반영 완료
+
+새 기획 변경이 있으면 이 섹션에 기록.
+
+### 개발→기획 전달 사항
+
+(현재 없음)
 
 ---
 
@@ -215,37 +305,39 @@ myfirstapp/
 ├── CLAUDE.md                ← AI 행동 지침
 ├── HANDOVER.md              ← 이 파일 (인수인계 문서)
 ├── decisions.md             ← UX/기능 기획서
-├── technical-design.md      ← 기술 설계서 + 디자인 시스템
+├── technical-design.md      ← 기술 설계서
 ├── design-system.md         ← 디자인 시스템 (라이트, v2)
 ├── design-system-dark.md    ← 디자인 시스템 (다크모드)
 ├── .gitignore
-├── reports/                 ← 세션별 업무 보고서 (아래 "리포트 규칙" 참조)
-│   ├── PLAN-REPORT-YYYYMMDD.md
+├── reports/                 ← 세션별 리포트 + 핸드오프 문서
 │   ├── DEV-REPORT-YYYYMMDD.md
-│   └── QA-REPORT-YYYYMMDD.md
+│   ├── PLAN-REPORT-YYYYMMDD.md
+│   ├── QA-REPORT-YYYYMMDD.md
+│   └── PLAN-DEV-HANDOFF-*.md  ← 기획→개발 상세 프롬프트
+├── QA-FIX/                  ← QA 수정 프롬프트
 ├── backend/
 │   ├── .env                 ← API 키, Slack 토큰
 │   ├── main.py              ← FastAPI 앱 엔트리
-│   ├── config.py            ← 환경 설정
+│   ├── config.py            ← 환경 설정 + 시작 시 경고 로그
 │   ├── requirements.txt
-│   ├── models/              ← Pydantic 모델 (block, session, meeting, template, settings, base)
-│   ├── routers/             ← API 라우터 (sessions, audio, history, templates, contacts, recovery, settings)
-│   └── services/            ← 비즈니스 로직 (아직 비어있음)
+│   ├── models/              ← Pydantic (block, session, meeting, template, settings, base)
+│   ├── routers/             ← sessions, audio, processing, ai, slack, history, templates, contacts, recovery, settings
+│   └── services/            ← audio_service, whisper_service, merger_service, claude_service, summary_assembler
 └── frontend/
-    ├── index.html           ← lang="ko", 폰트 CDN
-    ├── vite.config.ts       ← Vite + Tailwind + proxy (ws 포함)
+    ├── index.html           ← lang="ko", 폰트 CDN, FOUC 방지 스크립트
+    ├── vite.config.ts       ← Vite + Tailwind + proxy + allowedHosts
     ├── package.json
     └── src/
-        ├── index.css        ← Tailwind v4 + 시맨틱 색상 토큰
+        ├── index.css        ← Tailwind v4 + 시맨틱 색상 토큰 + 다크모드 오버라이드
         ├── App.tsx           ← React Router 라우팅
-        ├── main.tsx          ← BrowserRouter 래핑
-        ├── types/            ← TypeScript 타입 + Web Speech 타입 선언
-        ├── api/              ← Axios 클라이언트 (sessions, history, templates, contacts, recovery)
-        ├── stores/           ← Zustand (sessionStore, wizardStore)
-        ├── hooks/            ← useTimer, useAudioStream, useWebSpeech
-        ├── pages/            ← Home, MeetingSetup, Recording, Processing~SendSave(placeholder), History, Settings
-        ├── components/       ← wizard/(WizardStepper, WizardLayout), common/(Toast, TagInput)
-        └── utils/            ← formatTime
+        ├── main.tsx          ← BrowserRouter + initTheme()
+        ├── types/            ← TypeScript 타입
+        ├── api/              ← sessions, history, slack, templates, contacts, recovery, client
+        ├── stores/           ← sessionStore (editMode), wizardStore (editedAfterSummary)
+        ├── hooks/            ← useTimer, useAudioStream (GainNode), useWebSpeech (instanceIdRef), useSilentAudio, useVisibility
+        ├── pages/            ← Home, MeetingSetup, Recording, Processing, Editing, Summary, SendSave, History, HistoryDetail, Settings
+        ├── components/       ← wizard/(WizardStepper, WizardLayout), common/(Toast, TagInput, Modal)
+        └── utils/            ← formatTime (formatTs, formatDuration, formatTimestamp), theme
 ```
 
 ---
@@ -322,6 +414,23 @@ myfirstapp/
 - 중요도 태깅 색상 체계(`#EF4444` / `#F59E0B` / `#D1D5DB` / 투명)는 **변경하지 말 것** — 사용자가 명시적으로 유지 요청
 - 기존 Status 색상(recording/success/warning)도 유지
 - 기능·인터랙션 로직은 변경 없음 — 순수 스타일 변경
+
+#### [2026-04-21~22] 실사용 피드백 기반 기획 변경 (대량)
+
+**개요:**
+Sprint 4 완료 후 사용자 실사용에서 발견된 오류 및 개선 요청을 반영하여 decisions.md, technical-design.md, design-system.md를 대폭 수정함.
+
+**개발 세션이 수행해야 할 작업:**
+아래 3개 프롬프트 파일에 상세 지시가 있음. 순서대로 확인하고 ��영할 것.
+
+1. **`reports/PLAN-DEV-HANDOFF-20260422.md`** — 기획 변경 6건 + 버그 7건 + 이전 미착수 확인 5건
+2. **`reports/PLAN-DEV-HANDOFF-20260422-2.md`** — 기획 변경 10건 + 디자인 1건 + 확인 1건
+3. **`reports/PLAN-REPORT-20260422.md` 8절** — FAB 좌하단 + 폴더 선택 + 네비 바 디자인 통일 (3건)
+
+**주의:**
+- decisions.md의 변경 부분을 반드시 읽고 코드에 반영할 것
+- 특히 키보드 명령어 변경(Shift+Enter→줄바꿈, Ctrl+Enter→분할)은 Recording.tsx + Editing.tsx 모두 적용
+- 복구 플로우는 technical-design.md 4-10절 참조 (기존 세션 재개 방식, restore API 제거)
 
 ### 개발→기획 전달 사항
 
