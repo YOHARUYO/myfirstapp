@@ -59,7 +59,11 @@ export default function SendSave() {
 
   useEffect(() => {
     setStep(7);
-  }, [setStep]);
+    // Fetch latest session data (ensures 6단계 편집이 반영됨)
+    if (session) {
+      getSession(session.session_id).then(setSession).catch(() => {});
+    }
+  }, [setStep]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load channels
   useEffect(() => {
@@ -292,9 +296,10 @@ export default function SendSave() {
     <WizardLayout prevRoute="/summary">
       <div className="pt-20">
         <h1 className="text-[40px] font-bold leading-tight text-text">전송 & 저장</h1>
+        <p className="text-[13px] text-text-secondary mt-2">Slack 전송, 로컬 .md 저장, 히스토리 기록</p>
 
         {/* Slack section */}
-        <div className="mt-20">
+        <div className="mt-20 bg-bg-subtle rounded-xl p-6">
           <div className="flex items-center gap-3 mb-6">
             <input
               type="checkbox"
@@ -426,7 +431,7 @@ export default function SendSave() {
         </div>
 
         {/* .md save section */}
-        <div className="mt-20">
+        <div className="mt-8 bg-bg-subtle rounded-xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <input
               type="checkbox"

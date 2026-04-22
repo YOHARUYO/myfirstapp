@@ -46,14 +46,14 @@ export default function WizardStepper({ onHomeClick, homeDisabled }: Props) {
           <div key={step} className="flex items-center">
             {i > 0 && (
               <div
-                className={`w-10 h-px mx-1.5 transition-colors ${
+                className={`w-4 md:w-10 h-px mx-0.5 md:mx-1.5 transition-colors ${
                   completed ? 'bg-primary' : 'bg-border'
                 }`}
               />
             )}
             <div className="flex flex-col items-center gap-1.5">
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-medium transition-colors ${
+                className={`w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-medium transition-colors ${
                   active
                     ? 'bg-primary text-white'
                     : completed
@@ -66,7 +66,7 @@ export default function WizardStepper({ onHomeClick, homeDisabled }: Props) {
                 {completed ? <Check size={14} strokeWidth={2.5} /> : step}
               </div>
               <span
-                className={`text-xs ${
+                className={`text-xs hidden md:block ${
                   active
                     ? 'text-primary font-medium'
                     : skipped

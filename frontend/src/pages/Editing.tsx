@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ChevronRight, ChevronDown, ChevronUp, Pencil, Search, Replace,
-  Undo2, Redo2, Eye, EyeOff, Keyboard, Sparkles, X,
+  Undo2, Redo2, Eye, EyeOff, Keyboard, Sparkles, X, Loader2,
 } from 'lucide-react';
 import WizardLayout from '../components/wizard/WizardLayout';
 import TagInput from '../components/common/TagInput';
@@ -41,6 +41,10 @@ export default function Editing() {
   const setEditedAfterSummary = useWizardStore((s) => s.setEditedAfterSummary);
   const session = useSessionStore((s) => s.session);
   const setSession = useSessionStore((s) => s.setSession);
+  const editMode = useSessionStore((s) => s.editMode);
+
+  // API base path depends on editMode
+  const apiBase = editMode === 'meeting' ? '/meetings' : '/sessions';
 
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [showCoreOnly, setShowCoreOnly] = useState(false);
@@ -83,15 +87,23 @@ export default function Editing() {
     listLocations().then(setContactLocations).catch(() => {});
   }, [setStep]);
 
-  // Load blocks from session
+  // Load blocks from server on mount (ensures latest data from step 3)
   useEffect(() => {
-    if (session) {
+    if (!session) return;
+    getSession(session.session_id).then((updated) => {
+      setSession(updated);
+      setBlocks(updated.blocks);
+      setMetaTitle(updated.metadata.title);
+      setMetaParticipants(updated.metadata.participants);
+      setMetaLocation(updated.metadata.location || '');
+    }).catch(() => {
+      // Fallback to store data
       setBlocks(session.blocks);
       setMetaTitle(session.metadata.title);
       setMetaParticipants(session.metadata.participants);
       setMetaLocation(session.metadata.location || '');
-    }
-  }, [session]);
+    });
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Close popover on outside click
   useEffect(() => {
@@ -137,7 +149,7 @@ export default function Editing() {
     );
     setPopoverBlockId(null);
     if (session) {
-      await api.patch(`/sessions/${session.session_id}/blocks/${blockId}/importance`, { importance: level });
+      await api.patch(`${apiBase}/${session.session_id}/blocks/${blockId}/importance`, { importance: level });
     }
   };
 
@@ -165,7 +177,7 @@ export default function Editing() {
       );
       setEditedAfterSummary();
       if (session) {
-        await api.patch(`/sessions/${session.session_id}/blocks/${editingBlockId}`, { text: editingText });
+        await api.patch(`${apiBase}/${session.session_id}/blocks/${editingBlockId}`, { text: editingText });
       }
     }
     setEditingBlockId(null);
@@ -186,7 +198,7 @@ export default function Editing() {
     if (!session) return;
     pushUndo(blocks);
     try {
-      const res = await api.post(`/sessions/${session.session_id}/blocks/${blockId}/split`, {
+      const res = await api.post(`${apiBase}/${session.session_id}/blocks/${blockId}/split`, {
         cursor_position: cursorPos,
       });
       // Reload blocks
@@ -205,7 +217,7 @@ export default function Editing() {
     if (!session) return;
     pushUndo(blocks);
     try {
-      await api.post(`/sessions/${session.session_id}/blocks/${blockId}/merge`, { direction });
+      await api.post(`${apiBase}/${session.session_id}/blocks/${blockId}/merge`, { direction });
       const updated = await getSession(session.session_id);
       setSession(updated);
       setBlocks(updated.blocks);
@@ -219,7 +231,7 @@ export default function Editing() {
     if (!session || !searchText) return;
     pushUndo(blocks);
     try {
-      const res = await api.post(`/sessions/${session.session_id}/blocks/search-replace`, {
+      const res = await api.post(`${apiBase}/${session.session_id}/blocks/search-replace`, {
         search: searchText,
         replace: replaceText,
         case_sensitive: searchCaseSensitive,
@@ -241,17 +253,21 @@ export default function Editing() {
   };
 
   // AI re-tagging
+  const [retagging, setRetagging] = useState(false);
   const handleRetag = async () => {
     if (!session) return;
+    setRetagging(true);
     pushUndo(blocks);
     try {
       const res = await retagBlocks(session.session_id);
       const updated = await getSession(session.session_id);
       setSession(updated);
       setBlocks(updated.blocks);
-      showToast(`AI 태깅 완료: ${res.tagged_count}건`);
+      showToast(`${res.tagged_count}개 블록 태깅 완료`);
     } catch {
       showToast('AI 태깅에 실패했습니다');
+    } finally {
+      setRetagging(false);
     }
   };
 
@@ -321,7 +337,9 @@ export default function Editing() {
     } catch {}
   };
 
+  const [navigating, setNavigating] = useState(false);
   const handleNext = () => {
+    setNavigating(true);
     navigate('/summary');
   };
 
@@ -339,9 +357,10 @@ export default function Editing() {
       <div className="pt-20">
         {/* Page title */}
         <h1 className="text-[40px] font-bold leading-tight text-text">회의록 편집</h1>
+        <p className="text-[13px] text-text-secondary mt-2">블록 편집, 중요도 태깅, 일괄 치환</p>
 
         {/* Metadata section */}
-        <div className="mt-12">
+        <div className="mt-12 bg-bg-subtle rounded-xl p-6">
           <button
             onClick={() => setMetaExpanded(!metaExpanded)}
             className="flex items-center gap-2 text-[15px] font-medium text-text-secondary cursor-pointer"
@@ -432,10 +451,11 @@ export default function Editing() {
             {/* AI re-tag */}
             <button
               onClick={handleRetag}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+              disabled={retagging}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer disabled:opacity-50"
             >
-              <Sparkles size={14} />
-              AI 재태깅
+              {retagging ? <Loader2 size={14} className="animate-spin" /> : <Sparkles size={14} />}
+              {retagging ? '태깅 중…' : 'AI 재태깅'}
             </button>
 
             {/* Shortcut help */}
@@ -495,7 +515,8 @@ export default function Editing() {
               <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">↑↓</kbd> 블록 이동</p>
               <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">1/2/3/4/0</kbd> 중요도 (상/중/하/최하/미지정)</p>
               <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">Enter</kbd> 편집 진입/확정</p>
-              <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">Shift+Enter</kbd> 블록 분할</p>
+              <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">Shift+Enter</kbd> 줄바꿈</p>
+              <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">Ctrl+Enter</kbd> 블록 분할</p>
               <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">Esc</kbd> 편집 취소</p>
               <p><kbd className="font-mono bg-bg-subtle px-1.5 py-0.5 rounded text-xs">Ctrl+Z/Y</kbd> 실행 취소/다시 실행</p>
             </div>
@@ -503,7 +524,7 @@ export default function Editing() {
         </div>
 
         {/* Block list */}
-        <div className="mt-6 space-y-3">
+        <div className="mt-6 bg-bg-subtle rounded-xl p-6 space-y-3">
           {visibleBlocks.length === 0 && (
             <div className="py-8 text-center text-sm text-text-tertiary border border-dashed border-border rounded-lg">
               {showCoreOnly ? '상/중 태깅된 블록이 없습니다' : '전사 블록이 없습니다'}
@@ -569,24 +590,36 @@ export default function Editing() {
                     value={editingText}
                     onChange={(e) => setEditingText(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter' && e.shiftKey) {
+                      // Ctrl+Enter (Cmd+Enter): 블록 분할
+                      if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                         e.preventDefault();
                         const pos = e.currentTarget.selectionStart;
                         handleSplit(block.block_id, pos);
                         return;
                       }
-                      if (e.key === 'Enter' && !e.shiftKey) {
+                      // Shift+Enter: 줄바꿈 (기본 동작 허용)
+                      if (e.key === 'Enter' && e.shiftKey) return;
+                      // Enter: 편집 확정
+                      if (e.key === 'Enter') {
                         e.preventDefault();
                         handleEditConfirm();
                       }
                       if (e.key === 'Escape') handleEditCancel();
+                      // Backspace at start: 위 블록과 병합 (첫 블록 가드)
                       if (e.key === 'Backspace' && e.currentTarget.selectionStart === 0) {
-                        e.preventDefault();
-                        handleMerge(block.block_id, 'prev');
+                        const idx = blocks.findIndex((b) => b.block_id === block.block_id);
+                        if (idx > 0) {
+                          e.preventDefault();
+                          handleMerge(block.block_id, 'prev');
+                        }
                       }
+                      // Delete at end: 아래 블록과 병합 (마지막 블록 가드)
                       if (e.key === 'Delete' && e.currentTarget.selectionStart === editingText.length) {
-                        e.preventDefault();
-                        handleMerge(block.block_id, 'next');
+                        const idx = blocks.findIndex((b) => b.block_id === block.block_id);
+                        if (idx < blocks.length - 1) {
+                          e.preventDefault();
+                          handleMerge(block.block_id, 'next');
+                        }
                       }
                     }}
                     onBlur={handleEditConfirm}
@@ -633,7 +666,7 @@ export default function Editing() {
         {/* Cheatline */}
         {cheatlineVisible && (
           <div className="mt-4 text-center text-xs text-text-tertiary">
-            Enter=확정 · Shift+Enter=분할 · Esc=취소
+            Enter=확정 · Shift+Enter=줄바꿈 · Ctrl+Enter=분할 · Esc=취소
           </div>
         )}
 
@@ -659,6 +692,15 @@ export default function Editing() {
           </button>
         </div>
       </div>
+
+      {navigating && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-backdrop">
+          <div className="flex flex-col items-center gap-4 bg-bg rounded-xl p-8 shadow-lg">
+            <Loader2 size={32} className="text-primary animate-spin" />
+            <p className="text-[15px] text-text font-medium">AI 요약 생성 중…</p>
+          </div>
+        </div>
+      )}
 
       <Toast message={toast.message} visible={toast.visible} onHide={() => setToast((prev) => ({ ...prev, visible: false }))} />
     </WizardLayout>

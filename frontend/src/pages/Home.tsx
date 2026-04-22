@@ -3,10 +3,29 @@ import { useNavigate } from 'react-router-dom';
 import { Mic, Clock, ChevronRight, Settings, AlertCircle, Trash2 } from 'lucide-react';
 import { listMeetings } from '../api/history';
 import { listRecoverable } from '../api/recovery';
-import { deleteSession } from '../api/sessions';
+import { deleteSession, getSession } from '../api/sessions';
 import { useWizardStore } from '../stores/wizardStore';
+import { useSessionStore } from '../stores/sessionStore';
 import { formatDuration } from '../utils/formatTime';
 import type { MeetingListItem, RecoverableSession } from '../types';
+
+const STATUS_LABELS: Record<string, string> = {
+  idle: '정보 입력 전',
+  recording: '녹음 완료',
+  post_recording: '녹음 완료',
+  processing: 'Whisper 처리 중',
+  editing: '편집 중',
+  summarizing: '요약 중',
+};
+
+const STATUS_ROUTES: Record<string, string> = {
+  idle: '/setup',
+  recording: '/recording',
+  post_recording: '/recording',
+  processing: '/processing',
+  editing: '/editing',
+  summarizing: '/summary',
+};
 
 export default function Home() {
   const navigate = useNavigate();
@@ -28,6 +47,16 @@ export default function Home() {
     loadData();
   }, [reset]);
 
+  const setSession = useSessionStore((s) => s.setSession);
+
+  const handleResume = async (r: RecoverableSession) => {
+    try {
+      const session = await getSession(r.session_id);
+      setSession(session);
+      navigate(STATUS_ROUTES[r.status] || '/setup');
+    } catch {}
+  };
+
   const handleDeleteSession = async (sessionId: string) => {
     try {
       await deleteSession(sessionId);
@@ -38,48 +67,32 @@ export default function Home() {
   return (
     <div className="max-w-md mx-auto min-h-screen flex flex-col items-center pt-20 px-6 md:px-10 pb-12">
       {/* 복구 배너 */}
-      {recoverable.length > 0 && (
-        <div className="w-full mb-8 p-5 bg-warning-bg rounded-xl flex items-start gap-3">
-          <AlertCircle size={20} className="text-warning mt-0.5 shrink-0" />
-          <div>
-            <p className="text-sm font-medium text-warning-text">
-              복구 가능한 회의 {recoverable.length}건
-            </p>
-            {recoverable.map((r) => (
-              <div
-                key={r.session_id}
-                className="mt-2 flex items-center justify-between gap-2"
-              >
-                <div className="min-w-0">
-                  <span className="text-sm text-warning-text/80">
-                    {r.date} {r.title || '제목 없음'}
-                  </span>
-                  {r.participants.length > 0 && (
-                    <span className="text-xs text-warning-text/60 ml-2">
-                      {r.participants.join(', ')}
-                    </span>
-                  )}
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <button
-                    onClick={() => navigate(`/setup?recover=${r.session_id}`)}
-                    className="text-xs font-medium text-primary hover:text-primary-hover transition-colors cursor-pointer"
-                  >
-                    이어가기
-                  </button>
-                  <button
-                    onClick={() => handleDeleteSession(r.session_id)}
-                    className="flex items-center gap-1 text-xs text-warning-text/60 hover:text-recording transition-colors cursor-pointer"
-                  >
-                    <Trash2 size={14} />
-                    삭제
-                  </button>
-                </div>
-              </div>
-            ))}
+      {recoverable.map((r) => (
+        <div key={r.session_id} className="w-full mb-8 bg-bg-subtle rounded-xl p-5">
+          <p className="text-sm font-medium text-text">진행 중인 회의가 있습니다</p>
+          <p className="text-[15px] text-text mt-2">
+            {r.title || '제목 없음'} · {r.date}
+            {r.participants.length > 0 && ` · ${r.participants[0]}${r.participants.length > 1 ? ` 외 ${r.participants.length - 1}명` : ''}`}
+          </p>
+          <p className="text-xs text-text-tertiary mt-1">
+            마지막 상태: {STATUS_LABELS[r.status] || r.status}
+          </p>
+          <div className="flex gap-2 mt-4">
+            <button
+              onClick={() => handleResume(r)}
+              className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
+            >
+              이어서 진행
+            </button>
+            <button
+              onClick={() => handleDeleteSession(r.session_id)}
+              className="px-4 py-2 text-sm font-medium text-text bg-bg-hover rounded-lg hover:bg-border-light cursor-pointer"
+            >
+              삭제하고 새로 시작
+            </button>
           </div>
         </div>
-      )}
+      ))}
 
       {/* 히어로 — Display (40px/700) */}
       <div className="text-center">
@@ -98,11 +111,17 @@ export default function Home() {
       {/* CTA */}
       <button
         onClick={() => navigate('/setup')}
-        className="w-full max-w-xs mt-8 py-3 px-5 bg-primary text-white rounded-lg text-[15px] font-semibold hover:bg-primary-hover transition-colors cursor-pointer flex items-center justify-center gap-2"
+        disabled={recoverable.length > 0}
+        className="w-full max-w-xs mt-8 py-3 px-5 bg-primary text-white rounded-lg text-[15px] font-semibold hover:bg-primary-hover transition-colors cursor-pointer flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed"
       >
         <Mic size={20} />
         새 회의 시작
       </button>
+      {recoverable.length > 0 && (
+        <p className="mt-2 text-xs text-text-tertiary text-center">
+          진행 중인 회의를 완료하거나 삭제한 후 새 회의를 시작할 수 있습니다
+        </p>
+      )}
 
       {/* 최근 회의 — Title (28px/700) */}
       <div className="w-full mt-20">

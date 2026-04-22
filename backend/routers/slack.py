@@ -31,12 +31,18 @@ def _load_session(session_id: str) -> Session:
     return Session.model_validate_json(path.read_text(encoding="utf-8"))
 
 
-def _strip_mrkdwn(text: str) -> str:
-    """Strip Slack mrkdwn formatting to plain text."""
+def _strip_mrkdwn(text: str, client=None) -> str:
+    """Strip Slack mrkdwn formatting to plain text. Optionally resolve user mentions."""
     # Remove bold/italic
     text = re.sub(r'[*_~`]', '', text)
-    # Replace user mentions <@U1234> with @user
-    text = re.sub(r'<@\w+>', '@user', text)
+    # Replace user mentions <@U1234> with display_name
+    def resolve_mention(match):
+        uid = match.group(1)
+        if client:
+            name, _ = _resolve_user_name(client, uid)
+            return f"@{name}"
+        return "@user"
+    text = re.sub(r'<@(\w+)>', resolve_mention, text)
     # Replace channel mentions <#C1234|name> with #name
     text = re.sub(r'<#\w+\|([^>]+)>', r'#\1', text)
     # Replace URLs <http://...|label> with label, or <http://...> with URL
@@ -105,7 +111,7 @@ def list_messages(channel_id: str, limit: int = 20):
 
             # Strip mrkdwn and truncate to 50 chars
             raw_text = msg.get("text", "")
-            text_preview = _strip_mrkdwn(raw_text)
+            text_preview = _strip_mrkdwn(raw_text, client)
             if len(text_preview) > 50:
                 text_preview = text_preview[:50] + "…"
 
@@ -144,7 +150,7 @@ class SlackSendRequest(BaseModel):
     attach_md: bool = True
 
 
-def _build_slack_message(session: Session, greeting: str = "") -> str:
+def _build_slack_message(session: Session, greeting: str = "", client=None) -> str:
     """Build Slack message text from session summary."""
     header = f"[{session.metadata.date or ''} {session.metadata.title}]"
 
@@ -184,7 +190,18 @@ def _build_slack_message(session: Session, greeting: str = "") -> str:
         parts.append("")
 
     parts.append("📎 전체 회의록 첨부")
-    return "\n".join(parts)
+
+    raw_message = "\n".join(parts)
+
+    # <@UXXXXXX> → @display_name 치환
+    if client:
+        def resolve_mention(match):
+            uid = match.group(1)
+            name, _ = _resolve_user_name(client, uid)
+            return f"@{name}"
+        raw_message = re.sub(r'<@(\w+)>', resolve_mention, raw_message)
+
+    return raw_message
 
 
 @router.post("/send")
@@ -205,7 +222,7 @@ def send_slack_message(req: SlackSendRequest):
         except Exception:
             pass
 
-    message_text = _build_slack_message(session, greeting)
+    message_text = _build_slack_message(session, greeting, client=client)
 
     try:
         kwargs = {

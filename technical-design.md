@@ -491,8 +491,17 @@ myfirstapp/
 | `GET` | `/api/meetings/{id}` | 회의 상세 |
 | `GET` | `/api/meetings/search?q=...&from=...&to=...` | 검색 (전문 검색 포함) |
 | `PATCH` | `/api/meetings/{id}` | 재편집 저장 (partial update, 아래 요청 바디 참조) |
+| `DELETE` | `/api/meetings/{id}` | 회의록 완전 삭제 (meeting JSON + 병합 오디오 + export .md) |
+| `POST` | `/api/meetings/{id}/blocks/{block_id}/split` | 재편집 중 블록 분할 |
+| `POST` | `/api/meetings/{id}/blocks/{block_id}/merge` | 재편집 중 블록 병합 |
+| `PATCH` | `/api/meetings/{id}/blocks/{block_id}` | 재편집 중 블록 텍스트 수정 |
+| `PATCH` | `/api/meetings/{id}/blocks/{block_id}/importance` | 재편집 중 중요도 태그 설정 |
 
 > **재편집 흐름**: Meeting을 Session으로 재변환하지 않음. 히스토리에서 "재편집" 클릭 시 Meeting 데이터를 5단계 편집 UI에 로드하고, 수정 완료 시 `PATCH /api/meetings/{id}`로 직접 저장. 재요약이 필요하면 `POST /api/meetings/{id}/resummarize` 호출 (Meeting 대상 요약 재생성).
+
+> **재편집 블록 편집 API**: 재편집 모드에서 블록 분할·병합·수정·태깅은 Session용 API(`/api/sessions/...`)가 아닌 **Meeting용 API(`/api/meetings/...`)를 사용**. 프론트엔드의 `editMode: "meeting"`일 때 API 경로를 `/api/meetings/{id}/blocks/...`로 분기. 동작 규칙은 Session 블록 편집과 동일.
+
+> **회의록 삭제**: `DELETE /api/meetings/{id}` 호출 시 meeting JSON 파일, 병합된 오디오 파일(`merged_audio_path`), export .md 파일(`local_file_path`)을 모두 삭제. Slack에 전송된 메시지는 삭제하지 않음 (별도 `DELETE /api/slack/message` 사용).
 
 **`PATCH /api/meetings/{id}` 요청 바디** (partial update — 포함된 필드만 수정):
 ```json

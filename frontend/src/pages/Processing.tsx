@@ -88,14 +88,18 @@ export default function Processing() {
     };
   }, [session, kickOff]);
 
-  // beforeunload warning during processing
+  // beforeunload + popstate warning during processing
   useEffect(() => {
     if (isComplete || error) return;
-    const handler = (e: BeforeUnloadEvent) => {
-      e.preventDefault();
+    const unloadHandler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    const popHandler = () => { window.history.pushState(null, '', window.location.href); };
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('beforeunload', unloadHandler);
+    window.addEventListener('popstate', popHandler);
+    return () => {
+      window.removeEventListener('beforeunload', unloadHandler);
+      window.removeEventListener('popstate', popHandler);
     };
-    window.addEventListener('beforeunload', handler);
-    return () => window.removeEventListener('beforeunload', handler);
   }, [isComplete, error]);
 
   const handleRetry = async () => {

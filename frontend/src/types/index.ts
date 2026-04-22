@@ -98,6 +98,8 @@ export interface MeetingListItem {
   participants: string[];
   slack_sent: boolean;
   local_file_path: string | null;
+  snippet?: string | null;
+  matched_field?: string | null;
 }
 
 export interface TemplateDefaults {

@@ -9,8 +9,11 @@ import { useSessionStore } from '../stores/sessionStore';
 import { useTimer } from '../hooks/useTimer';
 import { useAudioStream } from '../hooks/useAudioStream';
 import { useWebSpeech } from '../hooks/useWebSpeech';
+import { useSilentAudio } from '../hooks/useSilentAudio';
+import { useVisibility } from '../hooks/useVisibility';
 import { formatTimestamp } from '../utils/formatTime';
-import { updateMetadata, stopRecording, resumeRecording } from '../api/sessions';
+import { updateMetadata, stopRecording, resumeRecording, getSession } from '../api/sessions';
+import api from '../api/client';
 import { listParticipants, listLocations, addParticipant, addLocation } from '../api/contacts';
 import type { Block, ImportanceLevel } from '../types';
 import type { Contact } from '../api/contacts';
@@ -71,12 +74,24 @@ export default function Recording() {
   const animFrameRef = useRef<number | null>(null);
 
   const { elapsed, start: startTimer, stop: stopTimer, getElapsedSeconds } = useTimer();
+  const silentAudio = useSilentAudio();
 
   useEffect(() => {
     setStep(3);
     listParticipants().then(setContactParticipants).catch(() => {});
     listLocations().then(setContactLocations).catch(() => {});
   }, [setStep]);
+
+  // Block browser back during recording
+  useEffect(() => {
+    if (recordingState !== 'recording') return;
+    const handler = () => {
+      window.history.pushState(null, '', window.location.href);
+    };
+    window.history.pushState(null, '', window.location.href);
+    window.addEventListener('popstate', handler);
+    return () => window.removeEventListener('popstate', handler);
+  }, [recordingState]);
 
   useEffect(() => {
     if (!session) {
@@ -169,7 +184,25 @@ export default function Recording() {
     onFinal: handleFinal,
     onInterim: handleInterim,
     getElapsedSeconds,
+    onStatusChange: useCallback((message: string) => {
+      setToast({ message, visible: true });
+    }, []),
   });
+
+  // Background tab: restart Web Speech on tab return
+  useVisibility(useCallback(() => {
+    if (recordingState === 'recording') {
+      const wasDisconnected = !webSpeech.isActive();
+      webSpeech.stop();
+      // instanceIdRef 방식으로 이전 onend 무효화 — 50ms 후 새 인스턴스 시작
+      setTimeout(() => {
+        webSpeech.start();
+        if (wasDisconnected) {
+          setToast({ message: '탭 복귀: 전사를 재연결했습니다. 일부 전사가 누락됐을 수 있습니다.', visible: true });
+        }
+      }, 50);
+    }
+  }, [recordingState, webSpeech]));
 
   // Auto-scroll (skip when editing)
   useEffect(() => {
@@ -290,7 +323,7 @@ export default function Recording() {
     setFocusedBlockId(block.block_id);
   }, []);
 
-  const handleEditConfirm = useCallback(() => {
+  const handleEditConfirm = useCallback(async () => {
     if (!editingBlockId) return;
     const textChanged = editingText !== editingOriginalText;
     setBlocks((prev) =>
@@ -305,10 +338,37 @@ export default function Recording() {
           : b
       )
     );
+    // 서버에 저장 (변경된 경우만)
+    if (textChanged && session) {
+      try {
+        await api.patch(`/sessions/${session.session_id}/blocks/${editingBlockId}`, { text: editingText });
+      } catch {}
+    }
     setEditingBlockId(null);
     setEditingText('');
     setEditingOriginalText('');
-  }, [editingBlockId, editingText, editingOriginalText]);
+  }, [editingBlockId, editingText, editingOriginalText, session]);
+
+  const handleSplit = useCallback(async (blockId: string, cursorPos: number) => {
+    if (!session) return;
+    try {
+      await api.post(`/sessions/${session.session_id}/blocks/${blockId}/split`, { cursor_position: cursorPos });
+      const updated = await getSession(session.session_id);
+      setSession(updated);
+      setBlocks(updated.blocks);
+      setEditingBlockId(null);
+    } catch {}
+  }, [session, setSession]);
+
+  const handleMerge = useCallback(async (blockId: string, direction: 'prev' | 'next') => {
+    if (!session) return;
+    try {
+      await api.post(`/sessions/${session.session_id}/blocks/${blockId}/merge`, { direction });
+      const updated = await getSession(session.session_id);
+      setSession(updated);
+      setBlocks(updated.blocks);
+    } catch {}
+  }, [session, setSession]);
 
   const handleEditCancel = useCallback(() => {
     setEditingBlockId(null);
@@ -329,6 +389,7 @@ export default function Recording() {
       if (stream) startMicLevel(stream);
       webSpeech.start();
       startTimer();
+      silentAudio.start();
       setRecordingState('recording');
     } catch (err: any) {
       const message =
@@ -345,6 +406,7 @@ export default function Recording() {
     webSpeech.stop();
     stopTimer();
     stopMicLevel();
+    silentAudio.stop();
     await audioStream.stopRecording(); // Wait for last chunk to be sent
     stoppedAtRef.current = Date.now();
     setInterimText('');
@@ -409,8 +471,8 @@ export default function Recording() {
       onBeforeHome={recordingState === 'recording' ? () => handleStopRecording() : undefined}
     >
       <div className="max-w-3xl mx-auto flex flex-col pt-20 px-6 md:px-10" style={{ minHeight: 'calc(100vh - 120px)' }}>
-        {/* 상태바 */}
-        <div className="flex items-center gap-3 mb-4">
+        {/* 상태바 (sticky top) */}
+        <div className="flex items-center gap-3 mb-4 sticky top-0 z-10 bg-bg py-3 -mx-6 px-6 md:-mx-10 md:px-10">
           <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${recordingState === 'recording' ? 'bg-recording animate-pulse' : 'bg-text-tertiary'}`} />
           <span className="text-xs font-medium text-text-secondary">
             {recordingState === 'idle' && '녹음 대기'}
@@ -473,8 +535,8 @@ export default function Recording() {
           )}
         </div>
 
-        {/* 컨트롤 바 */}
-        <div className="flex items-center gap-3 mb-6">
+        {/* 컨트롤 바 (sticky bottom) */}
+        <div className="flex items-center gap-3 mb-6 sticky bottom-0 z-10 bg-bg py-3 -mx-6 px-6 md:-mx-10 md:px-10">
           {recordingState === 'idle' && (
             <button onClick={handleStartRecording} className="flex items-center gap-2 px-5 py-3 bg-success text-white rounded-lg text-[15px] font-semibold hover:opacity-90 transition-opacity cursor-pointer">
               <Mic size={20} /> 녹음 시작
@@ -563,8 +625,23 @@ export default function Recording() {
                       value={editingText}
                       onChange={(e) => setEditingText(e.target.value)}
                       onKeyDown={(e) => {
-                        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleEditConfirm(); }
-                        if (e.key === 'Escape') handleEditCancel();
+                        if (e.key === 'Enter' && e.shiftKey) return; // 줄바꿈
+                        if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          handleSplit(block.block_id, e.currentTarget.selectionStart);
+                          return;
+                        }
+                        if (e.key === 'Enter') { e.preventDefault(); handleEditConfirm(); return; }
+                        if (e.key === 'Escape') { handleEditCancel(); return; }
+                        if (e.key === 'Backspace' && e.currentTarget.selectionStart === 0) {
+                          const idx = blocks.findIndex((b) => b.block_id === block.block_id);
+                          if (idx > 0) { e.preventDefault(); handleMerge(block.block_id, 'prev'); }
+                          return;
+                        }
+                        if (e.key === 'Delete' && e.currentTarget.selectionStart === editingText.length) {
+                          const idx = blocks.findIndex((b) => b.block_id === block.block_id);
+                          if (idx < blocks.length - 1) { e.preventDefault(); handleMerge(block.block_id, 'next'); }
+                        }
                       }}
                       onBlur={handleEditConfirm}
                       className="flex-1 text-[15px] text-text leading-relaxed bg-bg ring-2 ring-primary rounded-lg px-3 py-1 resize-none focus:outline-none"

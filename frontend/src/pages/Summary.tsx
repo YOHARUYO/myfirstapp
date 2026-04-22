@@ -295,10 +295,11 @@ export default function Summary() {
       <div className="pt-20">
         {/* Page title */}
         <h1 className="text-[40px] font-bold leading-tight text-text">요약</h1>
+        <p className="text-[13px] text-text-secondary mt-2">AI가 생성한 회의 요약과 F/U 항목</p>
 
-        {/* Loading state */}
+        {/* Loading state — full screen overlay */}
         {loading && (
-          <div className="mt-20 flex flex-col items-center gap-4">
+          <div className="fixed inset-0 z-50 bg-bg/80 flex flex-col items-center justify-center gap-4">
             <Loader2 size={32} className="text-primary animate-spin" />
             <p className="text-[15px] text-text-secondary">AI 요약을 생성하고 있습니다...</p>
           </div>
@@ -333,7 +334,7 @@ export default function Summary() {
             </div>
 
             {/* Summary blocks */}
-            <div className="mt-6">
+            <div className="mt-6 bg-bg-subtle rounded-xl p-6">
               {summaryBlocks.map((block) => (
                 <div key={block.id} className="group">
                   {editingBlockId === block.id ? (
