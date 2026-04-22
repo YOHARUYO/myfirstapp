@@ -24,3 +24,4 @@ class AppSettings(BaseModel):
     slack_greeting: str = "오늘 진행된 회의 회의록 공유드립니다~!"
     export_path: str = ""
     summary_template: str = "default"
+    mic_sensitivity: float = 1.0

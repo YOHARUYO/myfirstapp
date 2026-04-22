@@ -232,13 +232,27 @@ border border-border rounded-lg px-3 py-2
 focus:border-primary focus:outline-none
 ```
 
-**v2:**
+**v2 — 페이지 직접 배치 (부모 배경이 bg-bg일 때):**
 ```
 bg-bg-subtle rounded-lg px-4 py-3 text-[15px]
-focus:bg-white focus:ring-2 focus:ring-primary focus:outline-none
+focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none
 ```
 
-**변경점:** 기본 상태 테두리 제거, 배경색으로 필드 식별. 포커스 시 흰 배경 + 블루 ring.
+**v2 — 배경 블록 안 배치 (부모 배경이 bg-bg-subtle일 때):**
+```
+bg-bg rounded-lg px-4 py-3 text-[15px] ring-1 ring-border-light
+focus:ring-2 focus:ring-primary focus:outline-none
+```
+
+**변경점:** 기본 상태 테두리 제거, 배경색으로 필드 식별. 포커스 시 블루 ring.
+
+**입력 필드 배경색 원칙**: 입력 필드는 **항상 부모 배경보다 한 단계 대비되는 색**을 사용하여 필드임을 인지할 수 있어야 함.
+| 부모 배경 | 입력 필드 배경 | 추가 처리 |
+|----------|---------------|----------|
+| `bg-bg` (white) | `bg-bg-subtle` (연회색) | 없음 (기본) |
+| `bg-bg-subtle` (연회색) | **`bg-bg` (white)** | `ring-1 ring-border-light` 미세 테두리 추가 |
+| 다크: `bg-bg` (#1A1B1E) | `bg-bg-subtle` (#27282C) | 없음 |
+| 다크: `bg-bg-subtle` (#27282C) | **`bg-bg` (#1A1B1E)** 또는 `bg-bg-hover` (#32343A) | `ring-1 ring-border-light` |
 
 ### 빈 상태 (Empty State, 유지)
 ```

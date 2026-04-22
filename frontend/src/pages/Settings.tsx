@@ -417,6 +417,39 @@ export default function Settings() {
         </div>
       </section>
 
+      {/* Storage */}
+      <section className="mt-20">
+        <h2 className="text-[28px] font-bold text-text mb-6">저장</h2>
+        <div className="bg-bg-subtle rounded-xl p-4">
+          <p className="text-[15px] font-medium text-text">기본 저장 경로</p>
+          <div className="mt-2 flex items-center gap-2">
+            <span className="text-xs text-text-secondary truncate">{settings?.export_path || 'exports/'}</span>
+            <button
+              onClick={async () => {
+                try {
+                  if ('showDirectoryPicker' in window) {
+                    const handle = await (window as any).showDirectoryPicker();
+                    await api.patch('/settings', { export_path: handle.name });
+                    setSettings((prev) => prev ? { ...prev, export_path: handle.name } : prev);
+                    showToast('저장 경로 변경됨');
+                  } else {
+                    const path = prompt('저장 경로를 입력하세요', settings?.export_path || '');
+                    if (path !== null) {
+                      await api.patch('/settings', { export_path: path });
+                      setSettings((prev) => prev ? { ...prev, export_path: path } : prev);
+                      showToast('저장 경로 변경됨');
+                    }
+                  }
+                } catch {}
+              }}
+              className="text-xs text-primary hover:text-primary-hover cursor-pointer shrink-0"
+            >
+              폴더 선택
+            </button>
+          </div>
+        </div>
+      </section>
+
       {/* Template Modal */}
       <Modal open={templateModal} onClose={() => setTemplateModal(false)}>
         <h3 className="text-lg font-semibold text-text mb-4">

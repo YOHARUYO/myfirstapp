@@ -35,8 +35,10 @@ export default function Processing() {
   const [processingStatus, setProcessingStatus] = useState<ProcessingStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isComplete, setIsComplete] = useState(false);
+  const [showChoice, setShowChoice] = useState(false);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const startedRef = useRef(false);
+  const isUpload = session?.input_mode === 'upload';
 
   useEffect(() => {
     setStep(4);
@@ -78,15 +80,32 @@ export default function Processing() {
     }
   }, [session, setSession]);
 
-  // Start processing and begin polling
+  // Start processing: upload mode → auto start, realtime → show choice
   useEffect(() => {
     if (!session || startedRef.current) return;
-    startedRef.current = true;
-    kickOff();
+    if (isUpload) {
+      startedRef.current = true;
+      kickOff();
+    } else {
+      setShowChoice(true);
+    }
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [session]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleStartProcessing = () => {
+    setShowChoice(false);
+    startedRef.current = true;
+    kickOff();
+  };
+
+  const handleSkipWhisper = async () => {
+    if (!session) return;
+    const updated = await getSession(session.session_id);
+    setSession(updated);
+    navigate('/editing');
+  };
 
   // beforeunload + popstate warning during processing
   useEffect(() => {
@@ -132,6 +151,35 @@ export default function Processing() {
     }
     return Math.round((completed / STAGE_ORDER.length) * 100);
   })();
+
+  // Choice screen (realtime mode only)
+  if (showChoice) {
+    return (
+      <WizardLayout prevRoute="/recording">
+        <div className="pt-20 max-w-md mx-auto">
+          <h1 className="text-[40px] font-bold leading-tight text-text">Whisper 처리</h1>
+          <p className="text-[13px] text-text-secondary mt-2">녹음된 오디오를 Whisper로 재처리하여 정확도를 높입니다</p>
+          <div className="mt-12 space-y-3">
+            <button
+              onClick={handleStartProcessing}
+              className="w-full px-5 py-4 bg-primary text-bg text-[15px] font-semibold rounded-xl hover:bg-primary-hover cursor-pointer"
+            >
+              Whisper 처리 시작
+            </button>
+            <button
+              onClick={handleSkipWhisper}
+              className="w-full px-5 py-4 bg-bg-subtle text-text text-[15px] font-medium rounded-xl hover:bg-bg-hover cursor-pointer"
+            >
+              건너뛰기 — Web Speech 결과만 사용
+            </button>
+          </div>
+          <p className="mt-4 text-xs text-text-tertiary">
+            건너뛰어도 AI 태깅은 다음 단계에서 별도 실행됩니다.
+          </p>
+        </div>
+      </WizardLayout>
+    );
+  }
 
   return (
     <WizardLayout homeDisabled={!isComplete && !error} prevRoute={false}>

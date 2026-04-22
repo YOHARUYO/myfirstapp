@@ -26,6 +26,7 @@ export default function SendSave() {
   // Checkboxes
   const [sendSlack, setSendSlack] = useState(true);
   const [saveMd, setSaveMd] = useState(true);
+  const [exportPath, setExportPath] = useState('');
 
   // Slack options
   const [channels, setChannels] = useState<SlackChannel[]>([]);
@@ -34,6 +35,7 @@ export default function SendSave() {
   const [threadMessages, setThreadMessages] = useState<SlackMessage[]>([]);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [channelsLoading, setChannelsLoading] = useState(false);
+  const [threadsLoading, setThreadsLoading] = useState(false);
 
   // Preview
   const [previewExpanded, setPreviewExpanded] = useState(false);
@@ -105,9 +107,11 @@ export default function SendSave() {
   // Load thread messages when switching to thread mode
   useEffect(() => {
     if (sendMode === 'thread' && selectedChannel) {
+      setThreadsLoading(true);
       listMessages(selectedChannel, 20)
         .then(setThreadMessages)
-        .catch(() => setThreadMessages([]));
+        .catch(() => setThreadMessages([]))
+        .finally(() => setThreadsLoading(false));
     }
   }, [sendMode, selectedChannel]);
 
@@ -293,7 +297,22 @@ export default function SendSave() {
   }
 
   return (
-    <WizardLayout prevRoute="/summary">
+    <WizardLayout
+      prevRoute="/summary"
+      nextSlot={
+        <button
+          onClick={handleExecute}
+          disabled={executing || (!sendSlack && !saveMd)}
+          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-bg bg-primary rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {executing ? (
+            <><Loader2 size={20} className="animate-spin" /> 실행 중...</>
+          ) : (
+            <><Send size={20} /> 실행</>
+          )}
+        </button>
+      }
+    >
       <div className="pt-20">
         <h1 className="text-[40px] font-bold leading-tight text-text">전송 & 저장</h1>
         <p className="text-[13px] text-text-secondary mt-2">Slack 전송, 로컬 .md 저장, 히스토리 기록</p>
@@ -364,7 +383,12 @@ export default function SendSave() {
                 <div>
                   <label className="text-xs font-medium text-text-secondary block mb-1">스레드 선택</label>
                   <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                    {threadMessages.length === 0 && (
+                    {threadsLoading && (
+                      <div className="flex items-center gap-2 text-sm text-text-tertiary py-2">
+                        <Loader2 size={14} className="animate-spin" /> 메시지 불러오는 중...
+                      </div>
+                    )}
+                    {!threadsLoading && threadMessages.length === 0 && (
                       <p className="text-sm text-text-tertiary py-2">최근 메시지가 없습니다</p>
                     )}
                     {threadMessages.map((msg) => {
@@ -442,9 +466,29 @@ export default function SendSave() {
             <h2 className="text-[28px] font-bold text-text">로컬 저장</h2>
           </div>
           {saveMd && (
-            <p className="text-sm text-text-secondary ml-7">
-              .md 파일로 저장됩니다 (exports 폴더)
-            </p>
+            <div className="ml-7 mt-2">
+              <p className="text-sm text-text-secondary">.md 파일로 저장됩니다</p>
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-xs text-text-tertiary shrink-0">경로:</span>
+                <span className="text-xs text-text-secondary truncate">{exportPath || 'exports/'}</span>
+                <button
+                  onClick={async () => {
+                    try {
+                      if ('showDirectoryPicker' in window) {
+                        const handle = await (window as any).showDirectoryPicker();
+                        setExportPath(handle.name);
+                      } else {
+                        const path = prompt('저장 경로를 입력하세요', exportPath);
+                        if (path !== null) setExportPath(path);
+                      }
+                    } catch {}
+                  }}
+                  className="text-xs text-primary hover:text-primary-hover cursor-pointer shrink-0"
+                >
+                  폴더 선택
+                </button>
+              </div>
+            </div>
           )}
         </div>
 
@@ -456,26 +500,6 @@ export default function SendSave() {
           </div>
         </div>
 
-        {/* Execute button */}
-        <div className="mt-12 flex justify-end pb-4">
-          <button
-            onClick={handleExecute}
-            disabled={executing || (!sendSlack && !saveMd)}
-            className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-bg bg-primary rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            {executing ? (
-              <>
-                <Loader2 size={20} className="animate-spin" />
-                실행 중...
-              </>
-            ) : (
-              <>
-                <Send size={20} />
-                실행
-              </>
-            )}
-          </button>
-        </div>
       </div>
 
       {/* Delete Slack message modal */}

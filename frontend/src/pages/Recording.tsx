@@ -63,6 +63,7 @@ export default function Recording() {
   const [metaParticipants, setMetaParticipants] = useState<string[]>([]);
   const [metaLocation, setMetaLocation] = useState('');
   const [metaLanguage, setMetaLanguage] = useState('ko-KR');
+  const [micSensitivity, setMicSensitivity] = useState(1.0);
   const [contactParticipants, setContactParticipants] = useState<Contact[]>([]);
   const [contactLocations, setContactLocations] = useState<Contact[]>([]);
 
@@ -101,6 +102,8 @@ export default function Recording() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [recordingState]);
 
+  const [recoveryBanner, setRecoveryBanner] = useState(false);
+
   useEffect(() => {
     if (!session) {
       navigate('/setup');
@@ -109,6 +112,12 @@ export default function Recording() {
       setMetaParticipants(session.metadata.participants);
       setMetaLocation(session.metadata.location || '');
       setMetaLanguage(session.metadata.language);
+      // 복구 진입: 기존 블록이 있으면 로드 + post_recording 상태
+      if (session.blocks.length > 0 && blocks.length === 0) {
+        setBlocks(session.blocks);
+        setRecordingState('post_recording');
+        setRecoveryBanner(true);
+      }
     }
   }, [session, navigate]);
 
@@ -175,6 +184,7 @@ export default function Recording() {
         is_final: true,
         timestamp_start: timestampStart,
         timestamp_end: timestampEnd,
+        block_id: blockId,
       });
     },
     [audioStream]
@@ -395,7 +405,7 @@ export default function Recording() {
   const handleStartRecording = async () => {
     try {
       await audioStream.connect();
-      const stream = await audioStream.startRecording();
+      const stream = await audioStream.startRecording(micSensitivity);
       if (stream) startMicLevel(stream);
       webSpeech.start();
       startTimer();
@@ -437,7 +447,7 @@ export default function Recording() {
       // Sync status to server
       if (session) await resumeRecording(session.session_id);
       audioStream.sendResumed(gapSeconds);
-      const stream = await audioStream.startRecording();
+      const stream = await audioStream.startRecording(micSensitivity);
       if (stream) startMicLevel(stream);
       webSpeech.start();
       startTimer();
@@ -474,8 +484,18 @@ export default function Recording() {
       prevDisabled={recordingState === 'recording'}
       homeModalMessage={recordingState === 'recording' ? '녹음을 중지하고 홈으로 돌아가시겠어요?' : undefined}
       onBeforeHome={recordingState === 'recording' ? () => handleStopRecording() : undefined}
+      nextSlot={
+        <button
+          onClick={handleNext}
+          disabled={recordingState !== 'post_recording' || editingBlockId !== null}
+          className="flex items-center gap-1.5 px-5 py-3 bg-primary text-bg text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          다음 단계
+          <ChevronRight size={16} />
+        </button>
+      }
     >
-      <div className="max-w-3xl mx-auto flex flex-col pt-20 px-6 md:px-10" style={{ minHeight: 'calc(100vh - 120px)' }}>
+      <div className="max-w-3xl mx-auto flex flex-col pt-20 px-6 md:px-10 relative" style={{ minHeight: 'calc(100vh - 120px)' }}>
         {/* 상태바 (sticky top) */}
         <div className="flex items-center gap-3 mb-4 sticky top-0 z-10 bg-bg py-3 -mx-6 px-6 md:-mx-10 md:px-10">
           <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${recordingState === 'recording' ? 'bg-recording animate-pulse' : 'bg-text-tertiary'}`} />
@@ -536,28 +556,30 @@ export default function Recording() {
                   {contactLocations.map((l) => <option key={l.id} value={l.name} />)}
                 </datalist>
               </div>
+              <div>
+                <label className="block text-xs font-medium text-text-secondary mb-1">마이크 민감도 ({micSensitivity.toFixed(1)}x)</label>
+                <input
+                  type="range"
+                  min="0.5"
+                  max="3.0"
+                  step="0.1"
+                  value={micSensitivity}
+                  onChange={(e) => { const v = parseFloat(e.target.value); setMicSensitivity(v); audioStream.setGain(v); }}
+                  className="w-full accent-primary"
+                />
+              </div>
             </div>
           )}
         </div>
 
-        {/* 컨트롤 바 (sticky bottom) */}
-        <div className="flex items-center gap-3 mb-6 sticky bottom-0 z-10 bg-bg py-3 -mx-6 px-6 md:-mx-10 md:px-10">
-          {recordingState === 'idle' && (
-            <button onClick={handleStartRecording} className="flex items-center gap-2 px-5 py-3 bg-success text-white rounded-lg text-[15px] font-semibold hover:opacity-90 transition-opacity cursor-pointer">
-              <Mic size={20} /> 녹음 시작
-            </button>
-          )}
-          {recordingState === 'recording' && (
-            <button onClick={handleStopRecording} className="flex items-center gap-2 px-5 py-3 bg-recording text-white rounded-lg text-[15px] font-semibold hover:opacity-90 transition-opacity cursor-pointer">
-              <Square size={16} /> 중지
-            </button>
-          )}
-          {recordingState === 'post_recording' && (
-            <button onClick={handleResumeRecording} className="flex items-center gap-2 px-5 py-3 bg-success text-white rounded-lg text-[15px] font-semibold hover:opacity-90 transition-opacity cursor-pointer">
-              <Mic size={20} /> 녹음 재개
-            </button>
-          )}
-        </div>
+
+        {/* 복구 배너 */}
+        {recoveryBanner && (
+          <div className="mb-4 flex items-center justify-between bg-bg-subtle rounded-xl px-4 py-3">
+            <p className="text-sm text-text-secondary">이전 녹음이 복원되었습니다. 이어서 녹음하거나 다음 단계로 진행하세요.</p>
+            <button onClick={() => setRecoveryBanner(false)} className="text-text-tertiary hover:text-text cursor-pointer shrink-0 ml-3">✕</button>
+          </div>
+        )}
 
         {/* 전사 영역 */}
         <div className="flex-1 overflow-y-auto overflow-x-hidden mb-6 min-h-[300px]">
@@ -618,11 +640,13 @@ export default function Recording() {
                     )}
                   </div>
 
-                  {/* Timestamp */}
-                  <span className="text-xs font-mono text-text-tertiary shrink-0 pt-0.5 w-12">{formatTs(block.timestamp_start)}</span>
-
-                  {/* Edited indicator */}
-                  {block.is_edited && <Pencil size={12} className="text-primary shrink-0 mt-1" />}
+                  {/* Timestamp + edited indicator */}
+                  <div className="shrink-0 w-12 flex flex-col items-start pt-0.5">
+                    <span className={`text-xs font-mono ${block.is_edited ? 'text-primary' : 'text-text-tertiary'}`}>
+                      {formatTs(block.timestamp_start)}
+                    </span>
+                    {block.is_edited && <Pencil size={10} className="text-primary mt-0.5" />}
+                  </div>
 
                   {editingBlockId === block.block_id ? (
                     <textarea
@@ -655,7 +679,7 @@ export default function Recording() {
                   ) : (
                     /* 더블클릭=편집 */
                     <p
-                      className="flex-1 text-[15px] text-text leading-relaxed cursor-text select-text"
+                      className="flex-1 text-[15px] text-text leading-relaxed cursor-text select-text whitespace-pre-wrap"
                       onDoubleClick={() => handleEditStart(block)}
                     >
                       {block.text}
@@ -682,17 +706,34 @@ export default function Recording() {
           <div ref={transcriptEndRef} />
         </div>
 
-        {/* #4: post_recording에서만 활성 */}
-        <div className="flex justify-end pb-4">
-          <button
-            onClick={handleNext}
-            disabled={recordingState !== 'post_recording' || editingBlockId !== null}
-            className="flex items-center gap-1.5 px-5 py-3 bg-primary text-white text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            다음 단계
-            <ChevronRight size={16} />
-          </button>
+        {/* 녹음 컨트롤 FAB — 전사 영역 아래, 하단 네비 위 좌측 */}
+        <div className="sticky bottom-16 z-30 flex justify-start pointer-events-none mb-4">
+          {recordingState === 'idle' && (
+            <button
+              onClick={handleStartRecording}
+              className="pointer-events-auto w-14 h-14 rounded-full bg-success text-white shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              <Mic size={20} />
+            </button>
+          )}
+          {recordingState === 'recording' && (
+            <button
+              onClick={handleStopRecording}
+              className="pointer-events-auto w-14 h-14 rounded-full bg-recording text-white shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity cursor-pointer animate-pulse"
+            >
+              <Square size={18} />
+            </button>
+          )}
+          {recordingState === 'post_recording' && (
+            <button
+              onClick={handleResumeRecording}
+              className="pointer-events-auto w-14 h-14 rounded-full bg-success text-white shadow-lg flex items-center justify-center hover:opacity-90 transition-opacity cursor-pointer"
+            >
+              <Mic size={20} />
+            </button>
+          )}
         </div>
+
       </div>
 
       <Toast message={toast.message} visible={toast.visible} onHide={() => setToast((prev) => ({ ...prev, visible: false }))} />

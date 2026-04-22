@@ -290,7 +290,18 @@ export default function Summary() {
   };
 
   return (
-    <WizardLayout prevRoute="/editing">
+    <WizardLayout
+      prevRoute="/editing"
+      nextSlot={
+        <button
+          onClick={handleNext}
+          className="flex items-center gap-1.5 px-5 py-3 bg-primary text-bg text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer"
+        >
+          다음 단계
+          <ChevronRight size={16} />
+        </button>
+      }
+    >
       <div className="pt-20">
         {/* Page title */}
         <h1 className="text-[40px] font-bold leading-tight text-text">요약</h1>
@@ -465,16 +476,6 @@ export default function Summary() {
               )}
             </div>
 
-            {/* Next step */}
-            <div className="mt-12 flex justify-end pb-4">
-              <button
-                onClick={handleNext}
-                className="flex items-center gap-1.5 px-5 py-3 bg-primary text-bg text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer"
-              >
-                다음 단계
-                <ChevronRight size={16} />
-              </button>
-            </div>
           </>
         )}
       </div>

@@ -7,6 +7,7 @@ import {
 import WizardLayout from '../components/wizard/WizardLayout';
 import TagInput from '../components/common/TagInput';
 import Toast from '../components/common/Toast';
+import Modal from '../components/common/Modal';
 import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { getSession, updateMetadata, retagBlocks } from '../api/sessions';
@@ -351,9 +352,21 @@ export default function Editing() {
   };
 
   const [navigating, setNavigating] = useState(false);
+  const [skipSummaryModal, setSkipSummaryModal] = useState(false);
+
   const handleNext = () => {
+    setSkipSummaryModal(true);
+  };
+
+  const handleGoToSummary = () => {
+    setSkipSummaryModal(false);
     setNavigating(true);
     navigate('/summary');
+  };
+
+  const handleSkipToSend = () => {
+    setSkipSummaryModal(false);
+    navigate('/send');
   };
 
   // Filter blocks for display
@@ -366,7 +379,19 @@ export default function Editing() {
   const isMissingLocation = !metaLocation;
 
   return (
-    <WizardLayout prevDisabled>
+    <WizardLayout
+      prevRoute="/recording"
+      nextSlot={
+        <button
+          onClick={handleNext}
+          disabled={editingBlockId !== null}
+          className="flex items-center gap-1.5 px-5 py-3 bg-primary text-bg text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          다음 단계
+          <ChevronRight size={16} />
+        </button>
+      }
+    >
       <div className="pt-20">
         {/* Page title */}
         <h1 className="text-[40px] font-bold leading-tight text-text">회의록 편집</h1>
@@ -390,7 +415,7 @@ export default function Editing() {
                   value={metaTitle}
                   onChange={(e) => setMetaTitle(e.target.value)}
                   onBlur={() => saveMetadata('title', metaTitle)}
-                  className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none"
+                  className="w-full bg-bg rounded-lg px-4 py-3 text-[15px] ring-1 ring-border-light focus:ring-2 focus:ring-primary focus:outline-none"
                 />
               </div>
               <div>
@@ -410,7 +435,7 @@ export default function Editing() {
                   value={metaLocation}
                   onChange={(e) => setMetaLocation(e.target.value)}
                   onBlur={() => saveMetadata('location', metaLocation)}
-                  className={`w-full bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none ${isMissingLocation ? 'ring-2 ring-warning/30' : ''}`}
+                  className={`w-full bg-bg rounded-lg px-4 py-3 text-[15px] ring-1 ring-border-light focus:ring-2 focus:ring-primary focus:outline-none ${isMissingLocation ? 'ring-2 ring-warning/30' : ''}`}
                   placeholder="장소 입력"
                 />
               </div>
@@ -589,12 +614,13 @@ export default function Editing() {
                 </div>
 
                 {/* Timestamp */}
-                <span className="text-xs font-mono text-text-tertiary shrink-0 pt-0.5 w-12">
-                  {formatTs(block.timestamp_start)}
-                </span>
-
-                {/* Edited indicator */}
-                {block.is_edited && <Pencil size={12} className="text-primary shrink-0 mt-1" />}
+                {/* Timestamp + edited indicator */}
+                <div className="shrink-0 w-12 flex flex-col items-start pt-0.5">
+                  <span className={`text-xs font-mono ${block.is_edited ? 'text-primary' : 'text-text-tertiary'}`}>
+                    {formatTs(block.timestamp_start)}
+                  </span>
+                  {block.is_edited && <Pencil size={10} className="text-primary mt-0.5" />}
+                </div>
 
                 {/* Text or editor */}
                 {editingBlockId === block.block_id ? (
@@ -641,7 +667,7 @@ export default function Editing() {
                   />
                 ) : (
                   <p
-                    className="flex-1 text-[15px] text-text leading-relaxed cursor-text select-text"
+                    className="flex-1 text-[15px] text-text leading-relaxed cursor-text select-text whitespace-pre-wrap"
                     onDoubleClick={() => handleEditStart(block)}
                   >
                     {block.text}
@@ -693,18 +719,22 @@ export default function Editing() {
           <span>미지정 {blocks.filter((b) => !b.importance).length}</span>
         </div>
 
-        {/* Next step */}
-        <div className="mt-12 flex justify-end pb-4">
-          <button
-            onClick={handleNext}
-            disabled={editingBlockId !== null}
-            className="flex items-center gap-1.5 px-5 py-3 bg-primary text-white text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-          >
-            다음 단계
-            <ChevronRight size={16} />
+      </div>
+
+      <Modal open={skipSummaryModal} onClose={() => setSkipSummaryModal(false)}>
+        <h3 className="text-lg font-semibold text-text mb-2">다음 단계</h3>
+        <p className="text-sm text-text-secondary mb-6">AI 요약을 생성할까요?</p>
+        <div className="flex flex-col gap-2">
+          <button onClick={handleGoToSummary}
+            className="w-full px-4 py-3 text-sm font-semibold text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">
+            요약 생성
+          </button>
+          <button onClick={handleSkipToSend}
+            className="w-full px-4 py-3 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer">
+            건너뛰고 전송으로
           </button>
         </div>
-      </div>
+      </Modal>
 
       {navigating && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-backdrop">

@@ -78,7 +78,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                 data = json.loads(message["text"])
 
                 if data.get("type") == "speech_result" and data.get("is_final"):
-                    block_id = f"blk_{uuid4().hex[:8]}"
+                    block_id = data.get("block_id") or f"blk_{uuid4().hex[:8]}"
 
                     block = Block(
                         block_id=block_id,

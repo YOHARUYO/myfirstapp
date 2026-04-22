@@ -65,6 +65,7 @@ class UpdateSettingsRequest(BaseModel):
     slack_greeting: Optional[str] = None
     export_path: Optional[str] = None
     summary_template: Optional[str] = None
+    mic_sensitivity: Optional[float] = None
 
 
 @router.patch("")

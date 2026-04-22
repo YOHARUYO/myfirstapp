@@ -214,7 +214,18 @@ export default function MeetingSetup() {
   const inputFilledClass = 'w-full bg-template rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none transition-colors';
 
   return (
-    <WizardLayout prevRoute="/">
+    <WizardLayout
+      prevRoute="/"
+      nextSlot={
+        <button
+          onClick={handleNext}
+          disabled={creating}
+          className="px-5 py-3 bg-primary text-bg text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {creating ? '생성 중...' : '다음 단계 →'}
+        </button>
+      }
+    >
       <div className="max-w-lg mx-auto pt-20 px-6 md:px-10">
         <h1 className="text-[40px] font-bold text-text leading-tight mb-12">
           회의 정보
@@ -395,16 +406,6 @@ export default function MeetingSetup() {
           </div>
         )}
 
-        {/* 다음 단계 버튼 */}
-        <div className="flex justify-end">
-          <button
-            onClick={handleNext}
-            disabled={creating}
-            className="px-5 py-3 bg-primary text-white text-[15px] font-semibold rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {creating ? '생성 중...' : '다음 단계 →'}
-          </button>
-        </div>
       </div>
 
       <Toast

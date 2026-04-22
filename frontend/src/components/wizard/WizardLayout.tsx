@@ -8,16 +8,13 @@ import { useWizardStore } from '../../stores/wizardStore';
 interface Props {
   children: ReactNode;
   showStepper?: boolean;
-  /** Show "이전 단계" button. Pass the route path or false to hide */
   prevRoute?: string | false;
-  /** Disable "이전 단계" button (e.g., during recording) */
   prevDisabled?: boolean;
-  /** Disable home icon (e.g., during processing) */
   homeDisabled?: boolean;
-  /** Custom message for the home modal */
   homeModalMessage?: string;
-  /** Called before navigating home (e.g., to stop recording) */
   onBeforeHome?: () => void;
+  /** Slot for the "next step" button — rendered in the bottom nav bar right side */
+  nextSlot?: ReactNode;
 }
 
 export default function WizardLayout({
@@ -28,6 +25,7 @@ export default function WizardLayout({
   homeDisabled,
   homeModalMessage,
   onBeforeHome,
+  nextSlot,
 }: Props) {
   const navigate = useNavigate();
   const currentStep = useWizardStore((s) => s.currentStep);
@@ -47,6 +45,9 @@ export default function WizardLayout({
     navigate('/');
   };
 
+  const hasPrev = prevRoute !== false && !!prevRoute;
+  const hasBottomBar = hasPrev || !!nextSlot;
+
   return (
     <div className="max-w-3xl mx-auto min-h-screen flex flex-col overflow-x-hidden">
       {showStepper && (
@@ -55,6 +56,23 @@ export default function WizardLayout({
         </div>
       )}
       <div className="flex-1 p-6">{children}</div>
+
+      {/* 하단 네비게이션 바 — 이전(Secondary) + 다음(Primary) 대칭 */}
+      {hasBottomBar && (
+        <div className={`px-6 pb-6 flex items-center ${hasPrev ? 'justify-between' : 'justify-end'}`}>
+          {hasPrev && (
+            <button
+              onClick={() => navigate(prevRoute as string)}
+              disabled={prevDisabled}
+              className="flex items-center gap-1.5 bg-bg-subtle text-text-secondary rounded-lg px-5 py-3 text-[15px] font-medium hover:bg-bg-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+            >
+              <ArrowLeft size={16} />
+              이전 단계
+            </button>
+          )}
+          {nextSlot}
+        </div>
+      )}
 
       {/* Home confirmation modal */}
       <Modal open={homeModalOpen} onClose={() => setHomeModalOpen(false)}>

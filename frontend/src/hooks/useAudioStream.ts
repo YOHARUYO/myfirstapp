@@ -10,6 +10,8 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
   const wsRef = useRef<WebSocket | null>(null);
   const recorderRef = useRef<MediaRecorder | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const gainNodeRef = useRef<GainNode | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
   const [connected, setConnected] = useState(false);
 
   const connect = useCallback(() => {
@@ -39,11 +41,23 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
     });
   }, [sessionId, onChunkAck, onBlockCreated]);
 
-  const startRecording = useCallback(async () => {
+  const startRecording = useCallback(async (initialGain: number = 1.0) => {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     streamRef.current = stream;
 
-    const recorder = new MediaRecorder(stream, {
+    // GainNode pipeline for mic sensitivity
+    const audioCtx = new AudioContext();
+    audioCtxRef.current = audioCtx;
+    const source = audioCtx.createMediaStreamSource(stream);
+    const gainNode = audioCtx.createGain();
+    gainNode.gain.value = initialGain;
+    gainNodeRef.current = gainNode;
+
+    const destination = audioCtx.createMediaStreamDestination();
+    source.connect(gainNode);
+    gainNode.connect(destination);
+
+    const recorder = new MediaRecorder(destination.stream, {
       mimeType: 'audio/webm;codecs=opus',
       audioBitsPerSecond: 128000,
     });
@@ -54,13 +68,18 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
       }
     };
 
-    recorder.start(5000); // 5-second chunks
+    recorder.start(5000);
     recorderRef.current = recorder;
 
-    return stream;
+    return stream; // raw stream for mic level meter
   }, []);
 
-  // Returns a Promise that resolves after the last dataavailable fires and is sent
+  const setGain = useCallback((value: number) => {
+    if (gainNodeRef.current) {
+      gainNodeRef.current.gain.value = value;
+    }
+  }, []);
+
   const stopRecording = useCallback(() => {
     return new Promise<void>((resolve) => {
       const recorder = recorderRef.current;
@@ -68,6 +87,9 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         recorderRef.current = null;
+        audioCtxRef.current?.close();
+        audioCtxRef.current = null;
+        gainNodeRef.current = null;
         resolve();
         return;
       }
@@ -76,15 +98,18 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
         streamRef.current?.getTracks().forEach((t) => t.stop());
         streamRef.current = null;
         recorderRef.current = null;
+        audioCtxRef.current?.close();
+        audioCtxRef.current = null;
+        gainNodeRef.current = null;
         resolve();
       };
 
-      recorder.stop(); // triggers final dataavailable then onstop
+      recorder.stop();
     });
   }, []);
 
   const sendSpeechResult = useCallback(
-    (data: { text: string; is_final: boolean; timestamp_start: number; timestamp_end: number }) => {
+    (data: { text: string; is_final: boolean; timestamp_start: number; timestamp_end: number; block_id?: string }) => {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'speech_result', ...data }));
       }
@@ -105,6 +130,9 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
     streamRef.current?.getTracks().forEach((t) => t.stop());
     recorderRef.current = null;
     streamRef.current = null;
+    audioCtxRef.current?.close();
+    audioCtxRef.current = null;
+    gainNodeRef.current = null;
     wsRef.current?.close();
     wsRef.current = null;
     setConnected(false);
@@ -121,5 +149,6 @@ export function useAudioStream({ sessionId, onChunkAck, onBlockCreated }: UseAud
     sendResumed,
     disconnect,
     getStream,
+    setGain,
   };
 }
