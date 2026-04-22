@@ -11,7 +11,7 @@ import { useAudioStream } from '../hooks/useAudioStream';
 import { useWebSpeech } from '../hooks/useWebSpeech';
 import { useSilentAudio } from '../hooks/useSilentAudio';
 import { useVisibility } from '../hooks/useVisibility';
-import { formatTimestamp } from '../utils/formatTime';
+import { formatTimestamp, formatTs } from '../utils/formatTime';
 import { updateMetadata, stopRecording, resumeRecording, getSession } from '../api/sessions';
 import api from '../api/client';
 import { listParticipants, listLocations, addParticipant, addLocation } from '../api/contacts';
@@ -56,7 +56,7 @@ export default function Recording() {
   const [focusedBlockId, setFocusedBlockId] = useState<string | null>(null);
   const [micLevel, setMicLevel] = useState(0);
   const [popoverBlockId, setPopoverBlockId] = useState<string | null>(null);
-  const [infoExpanded, setInfoExpanded] = useState(true);
+  const [infoExpanded, setInfoExpanded] = useState(false);
 
   // Editable metadata fields
   const [metaTitle, setMetaTitle] = useState('');
@@ -93,6 +93,14 @@ export default function Recording() {
     return () => window.removeEventListener('popstate', handler);
   }, [recordingState]);
 
+  // beforeunload warning during recording/post_recording
+  useEffect(() => {
+    if (recordingState === 'idle') return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [recordingState]);
+
   useEffect(() => {
     if (!session) {
       navigate('/setup');
@@ -120,6 +128,7 @@ export default function Recording() {
     } catch {}
   }, [sessionId, metaTitle, metaParticipants, metaLocation, metaLanguage, setSession]);
 
+  const metaSaveVersionRef = useRef(0);
   const handleParticipantsChange = (v: string[]) => {
     setMetaParticipants(v);
     v.forEach((name) => {
@@ -127,25 +136,21 @@ export default function Recording() {
         addParticipant(name).then((c) => setContactParticipants((prev) => [...prev, c])).catch(() => {});
       }
     });
-    // Save immediately with latest value
+    const version = ++metaSaveVersionRef.current;
     if (sessionId) {
       updateMetadata(sessionId, {
         title: metaTitle,
         participants: v,
         location: metaLocation || null,
         language: metaLanguage,
-      }).then((updated) => setSession(updated)).catch(() => {});
+      }).then((updated) => {
+        if (metaSaveVersionRef.current === version) setSession(updated);
+      }).catch(() => {});
     }
   };
 
-  const handleBlockCreated = useCallback(
-    (data: { block_id: string; timestamp_start: number; timestamp_end: number }) => {},
-    []
-  );
-
   const audioStream = useAudioStream({
     sessionId,
-    onBlockCreated: handleBlockCreated,
   });
 
   const handleFinal = useCallback(
@@ -219,12 +224,17 @@ export default function Recording() {
     }
   }, [editingBlockId]);
 
-  // Close popover on outside click
+  // Close popover on outside click (next tick to avoid immediate trigger)
   useEffect(() => {
     if (!popoverBlockId) return;
     const close = () => setPopoverBlockId(null);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
+    const timer = setTimeout(() => {
+      window.addEventListener('click', close);
+    }, 0);
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('click', close);
+    };
   }, [popoverBlockId]);
 
   // Mic level meter (#1: AudioContext 리소스 관리)
@@ -445,11 +455,6 @@ export default function Recording() {
     navigate('/processing');
   };
 
-  const formatTs = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
-  };
 
   const formatGap = (seconds: number) => {
     if (seconds < 60) return `${Math.round(seconds)}초`;

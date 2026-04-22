@@ -15,14 +15,17 @@ def list_recoverable():
         if d.is_dir():
             sf = d / "session.json"
             if sf.exists():
-                s = Session.model_validate_json(sf.read_text(encoding="utf-8"))
-                if s.status != "completed":
-                    results.append({
-                        "session_id": s.session_id,
-                        "status": s.status,
-                        "title": s.metadata.title,
-                        "date": s.metadata.date,
-                        "participants": s.metadata.participants,
-                        "created_at": s.created_at,
-                    })
+                try:
+                    s = Session.model_validate_json(sf.read_text(encoding="utf-8"))
+                    if s.status != "completed":
+                        results.append({
+                            "session_id": s.session_id,
+                            "status": s.status,
+                            "title": s.metadata.title,
+                            "date": s.metadata.date,
+                            "participants": s.metadata.participants,
+                            "created_at": s.created_at,
+                        })
+                except Exception:
+                    continue
     return results

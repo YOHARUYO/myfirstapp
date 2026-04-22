@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from uuid import uuid4
@@ -12,6 +13,7 @@ from models.template import Template, TemplateDefaults
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
 TEMPLATES_FILE = DATA_DIR / "templates.json"
+_templates_lock = asyncio.Lock()
 
 
 def _load_templates() -> list[Template]:
@@ -37,40 +39,43 @@ class CreateTemplateRequest(BaseModel):
 
 
 @router.post("")
-def create_template(req: CreateTemplateRequest):
-    templates = _load_templates()
-    now = datetime.now().isoformat()
-    tpl = Template(
-        template_id=f"tpl_{uuid4().hex[:12]}",
-        name=req.name,
-        defaults=req.defaults,
-        created_at=now,
-        updated_at=now,
-    )
-    templates.append(tpl)
-    _save_templates(templates)
+async def create_template(req: CreateTemplateRequest):
+    async with _templates_lock:
+        templates = _load_templates()
+        now = datetime.now().isoformat()
+        tpl = Template(
+            template_id=f"tpl_{uuid4().hex[:12]}",
+            name=req.name,
+            defaults=req.defaults,
+            created_at=now,
+            updated_at=now,
+        )
+        templates.append(tpl)
+        _save_templates(templates)
     return tpl.model_dump()
 
 
 @router.patch("/{template_id}")
-def update_template(template_id: str, req: CreateTemplateRequest):
-    templates = _load_templates()
-    for t in templates:
-        if t.template_id == template_id:
-            t.name = req.name
-            t.defaults = req.defaults
-            t.updated_at = datetime.now().isoformat()
-            _save_templates(templates)
-            return t.model_dump()
+async def update_template(template_id: str, req: CreateTemplateRequest):
+    async with _templates_lock:
+        templates = _load_templates()
+        for t in templates:
+            if t.template_id == template_id:
+                t.name = req.name
+                t.defaults = req.defaults
+                t.updated_at = datetime.now().isoformat()
+                _save_templates(templates)
+                return t.model_dump()
     raise HTTPException(status_code=404, detail="Template not found")
 
 
 @router.delete("/{template_id}")
-def delete_template(template_id: str):
-    templates = _load_templates()
-    original_len = len(templates)
-    templates = [t for t in templates if t.template_id != template_id]
-    if len(templates) == original_len:
-        raise HTTPException(status_code=404, detail="템플릿을 찾을 수 없습니다")
-    _save_templates(templates)
+async def delete_template(template_id: str):
+    async with _templates_lock:
+        templates = _load_templates()
+        original_len = len(templates)
+        templates = [t for t in templates if t.template_id != template_id]
+        if len(templates) == original_len:
+            raise HTTPException(status_code=404, detail="템플릿을 찾을 수 없습니다")
+        _save_templates(templates)
     return {"deleted": template_id}

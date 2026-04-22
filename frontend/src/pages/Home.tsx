@@ -32,14 +32,14 @@ export default function Home() {
   const reset = useWizardStore((s) => s.reset);
   const [meetings, setMeetings] = useState<MeetingListItem[]>([]);
   const [recoverable, setRecoverable] = useState<RecoverableSession[]>([]);
+  const [loadError, setLoadError] = useState(false);
 
   const loadData = () => {
-    listMeetings()
-      .then((data) => setMeetings(data.slice(0, 5)))
-      .catch(() => {});
-    listRecoverable()
-      .then(setRecoverable)
-      .catch(() => {});
+    setLoadError(false);
+    Promise.all([
+      listMeetings().then((data) => setMeetings(data.slice(0, 5))),
+      listRecoverable().then(setRecoverable),
+    ]).catch(() => setLoadError(true));
   };
 
   useEffect(() => {
@@ -66,6 +66,13 @@ export default function Home() {
 
   return (
     <div className="max-w-md mx-auto min-h-screen flex flex-col items-center pt-20 px-6 md:px-10 pb-12">
+      {loadError && (
+        <div className="w-full mb-4 text-center">
+          <p className="text-sm text-text-tertiary">데이터를 불러올 수 없습니다</p>
+          <button onClick={loadData} className="text-sm text-primary mt-1 cursor-pointer">다시 시도</button>
+        </div>
+      )}
+
       {/* 복구 배너 */}
       {recoverable.map((r) => (
         <div key={r.session_id} className="w-full mb-8 bg-bg-subtle rounded-xl p-5">

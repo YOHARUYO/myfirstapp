@@ -29,11 +29,7 @@ const IMPORTANCE_OPTIONS: { level: ImportanceLevel | null; color: string; label:
   { level: null, color: 'bg-bg border border-border', label: '미지정' },
 ];
 
-function formatTs(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+import { formatTs } from '../utils/formatTime';
 
 export default function Editing() {
   const navigate = useNavigate();
@@ -117,7 +113,7 @@ export default function Editing() {
 
   // Undo/Redo
   const pushUndo = useCallback((current: Block[]) => {
-    setUndoStack((prev) => [...prev.slice(-50), current.map((b) => ({ ...b }))]);
+    setUndoStack((prev) => [...prev.slice(-49), current.map((b) => ({ ...b }))]);
     setRedoStack([]);
   }, []);
 
@@ -139,6 +135,10 @@ export default function Editing() {
 
   // Block importance
   const setBlockImportance = async (blockId: string, level: ImportanceLevel | null) => {
+    const prevBlock = blocks.find((b) => b.block_id === blockId);
+    const prevImportance = prevBlock?.importance ?? null;
+    const prevSource = prevBlock?.importance_source ?? null;
+
     pushUndo(blocks);
     setBlocks((prev) =>
       prev.map((b) =>
@@ -149,7 +149,18 @@ export default function Editing() {
     );
     setPopoverBlockId(null);
     if (session) {
-      await api.patch(`${apiBase}/${session.session_id}/blocks/${blockId}/importance`, { importance: level });
+      try {
+        await api.patch(`${apiBase}/${session.session_id}/blocks/${blockId}/importance`, { importance: level });
+      } catch {
+        setBlocks((prev) =>
+          prev.map((b) =>
+            b.block_id === blockId
+              ? { ...b, importance: prevImportance, importance_source: prevSource }
+              : b
+          )
+        );
+        showToast('중요도 저장에 실패했습니다');
+      }
     }
   };
 
@@ -307,15 +318,17 @@ export default function Editing() {
         ? blocks.filter((b) => b.importance === 'high' || b.importance === 'medium')
         : blocks;
 
-      if (e.key === 'ArrowDown' && visibleBlocks.length > 0) {
+      if (visibleBlocks.length === 0) return;
+
+      if (e.key === 'ArrowDown') {
         e.preventDefault();
         const idx = focusedBlockId ? visibleBlocks.findIndex((b) => b.block_id === focusedBlockId) : -1;
         const next = Math.min(idx + 1, visibleBlocks.length - 1);
         setFocusedBlockId(visibleBlocks[next].block_id);
       }
-      if (e.key === 'ArrowUp' && visibleBlocks.length > 0) {
+      if (e.key === 'ArrowUp') {
         e.preventDefault();
-        const idx = focusedBlockId ? visibleBlocks.findIndex((b) => b.block_id === focusedBlockId) : 1;
+        const idx = focusedBlockId ? visibleBlocks.findIndex((b) => b.block_id === focusedBlockId) : -1;
         const prev = Math.max(idx - 1, 0);
         setFocusedBlockId(visibleBlocks[prev].block_id);
       }

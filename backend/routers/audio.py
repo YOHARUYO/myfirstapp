@@ -52,8 +52,8 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
         session.status = "recording"
         await asyncio.to_thread(_save_session, session)
 
+    from uuid import uuid4
     chunk_index = session.audio_chunk_count
-    block_counter = len(session.blocks)
 
     try:
         while True:
@@ -78,8 +78,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                 data = json.loads(message["text"])
 
                 if data.get("type") == "speech_result" and data.get("is_final"):
-                    block_counter += 1
-                    block_id = f"blk_{block_counter:03d}"
+                    block_id = f"blk_{uuid4().hex[:8]}"
 
                     block = Block(
                         block_id=block_id,

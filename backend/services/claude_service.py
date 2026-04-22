@@ -1,7 +1,10 @@
 import json
+import logging
 from typing import List
 
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 from config import ANTHROPIC_API_KEY
 from models.block import Block
@@ -80,18 +83,26 @@ def tag_blocks(
     try:
         tags = json.loads(result_text)
     except json.JSONDecodeError:
-        # Try to extract JSON array from response
         start = result_text.find("[")
         end = result_text.rfind("]") + 1
         if start >= 0 and end > start:
-            tags = json.loads(result_text[start:end])
+            try:
+                tags = json.loads(result_text[start:end])
+            except json.JSONDecodeError:
+                logger.warning(f"[AI Tagging] JSON parse failed: {result_text[:200]}")
+                return {}
         else:
+            logger.warning(f"[AI Tagging] No JSON array found: {result_text[:200]}")
             return {}
 
+    VALID_IMPORTANCE = {"high", "medium", "low", "lowest"}
     return {
         item["block_id"]: item["importance"]
         for item in tags
-        if "block_id" in item and "importance" in item
+        if isinstance(item, dict)
+        and "block_id" in item
+        and "importance" in item
+        and item["importance"] in VALID_IMPORTANCE
     }
 
 

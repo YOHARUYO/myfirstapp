@@ -86,7 +86,7 @@ export default function Processing() {
     return () => {
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
-  }, [session, kickOff]);
+  }, [session]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // beforeunload + popstate warning during processing
   useEffect(() => {

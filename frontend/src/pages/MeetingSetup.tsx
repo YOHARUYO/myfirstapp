@@ -365,6 +365,7 @@ export default function MeetingSetup() {
               input.onchange = (e) => {
                 const file = (e.target as HTMLInputElement).files?.[0];
                 if (file) handleFileSelect(file);
+                input.remove();
               };
               input.click();
             }}

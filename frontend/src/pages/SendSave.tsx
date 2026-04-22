@@ -127,7 +127,7 @@ export default function SendSave() {
   };
 
   const doExecute = async () => {
-    if (!session) return;
+    if (!session || executing) return;
     setMissingModal(false);
     setExecuting(true);
 

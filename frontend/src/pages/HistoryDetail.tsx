@@ -12,11 +12,7 @@ import { useSessionStore } from '../stores/sessionStore';
 import api from '../api/client';
 import type { Meeting, ActionItem, Session } from '../types';
 
-function formatTs(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+import { formatTs } from '../utils/formatTime';
 
 function formatDuration(seconds: number | null): string {
   if (!seconds) return '';
@@ -238,12 +234,19 @@ export default function HistoryDetail() {
             {meeting.blocks.map((block) => {
               let tsDisplay: string;
               if (tsMode === 'absolute' && meta.start_time) {
-                const [h, m, s] = meta.start_time.split(':').map(Number);
-                const baseSeconds = (h || 0) * 3600 + (m || 0) * 60 + (s || 0);
-                const total = baseSeconds + block.timestamp_start;
-                const hh = Math.floor(total / 3600) % 24;
-                const mm = Math.floor((total % 3600) / 60);
-                tsDisplay = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+                const parts = meta.start_time.split(':').map(Number);
+                const h = parts[0] || 0;
+                const m = parts[1] || 0;
+                const s = parts[2] || 0;
+                if (!isNaN(h) && !isNaN(m)) {
+                  const baseSeconds = h * 3600 + m * 60 + s;
+                  const total = baseSeconds + block.timestamp_start;
+                  const hh = Math.floor(total / 3600) % 24;
+                  const mm = Math.floor((total % 3600) / 60);
+                  tsDisplay = `${String(hh).padStart(2, '0')}:${String(mm).padStart(2, '0')}`;
+                } else {
+                  tsDisplay = formatTs(block.timestamp_start);
+                }
               } else {
                 tsDisplay = formatTs(block.timestamp_start);
               }

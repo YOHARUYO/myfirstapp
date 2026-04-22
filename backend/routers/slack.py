@@ -8,6 +8,7 @@ from typing import Optional
 
 from config import SESSIONS_DIR, MEETINGS_DIR, SLACK_BOT_TOKEN, EXPORT_DIR
 from models.session import Session
+from models.meeting import Meeting
 
 router = APIRouter(prefix="/api/slack", tags=["slack"])
 
@@ -22,13 +23,19 @@ def _get_slack_client():
     return WebClient(token=SLACK_BOT_TOKEN)
 
 
-def _load_session(session_id: str) -> Session:
+def _load_session(session_id: str) -> Session | Meeting:
+    """Load session or meeting by ID (sessions first, then meetings)."""
     if not re.match(r'^[a-zA-Z0-9_-]+$', session_id):
-        raise HTTPException(status_code=400, detail="유효하지 않은 세션 ID")
-    path = SESSIONS_DIR / session_id / "session.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
-    return Session.model_validate_json(path.read_text(encoding="utf-8"))
+        raise HTTPException(status_code=400, detail="유효하지 않은 ID")
+    # Try sessions first
+    session_path = SESSIONS_DIR / session_id / "session.json"
+    if session_path.exists():
+        return Session.model_validate_json(session_path.read_text(encoding="utf-8"))
+    # Try meetings
+    meeting_path = MEETINGS_DIR / f"{session_id}.json"
+    if meeting_path.exists():
+        return Meeting.model_validate_json(meeting_path.read_text(encoding="utf-8"))
+    raise HTTPException(status_code=404, detail="Session or meeting not found")
 
 
 def _strip_mrkdwn(text: str, client=None) -> str:
@@ -48,6 +55,11 @@ def _strip_mrkdwn(text: str, client=None) -> str:
     # Replace URLs <http://...|label> with label, or <http://...> with URL
     text = re.sub(r'<(https?://[^|>]+)\|([^>]+)>', r'\2', text)
     text = re.sub(r'<(https?://[^>]+)>', r'\1', text)
+    # Remove emoji shortcodes :emoji_name:
+    text = re.sub(r':[\w+-]+:', '', text)
+    # Remove code blocks
+    text = re.sub(r'```[\s\S]*?```', '[code]', text)
+    text = re.sub(r'`([^`]+)`', r'\1', text)
     return text.strip()
 
 
@@ -288,7 +300,8 @@ def delete_slack_message(req: SlackDeleteRequest):
 
     # Update Meeting JSON if exists
     if MEETINGS_DIR.exists():
-        for mf in MEETINGS_DIR.glob("*.json"):
+        meeting_files = list(MEETINGS_DIR.glob("*.json"))
+        for mf in meeting_files:
             try:
                 data = _json.loads(mf.read_text(encoding="utf-8"))
                 slack_sent = data.get("slack_sent")

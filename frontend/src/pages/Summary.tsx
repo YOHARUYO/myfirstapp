@@ -12,15 +12,11 @@ import { useSessionStore } from '../stores/sessionStore';
 import { summarizeSession, getSession, updateSummaryMarkdown, updateActionItems } from '../api/sessions';
 import type { ActionItem } from '../types';
 
-function formatTs(seconds: number): string {
-  const m = Math.floor(seconds / 60);
-  const s = Math.floor(seconds % 60);
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-}
+import { formatTs } from '../utils/formatTime';
 
 /** Parse summary_markdown into editable blocks by ## / ### headings. */
 function parseSummaryBlocks(md: string): { id: string; heading: string; body: string }[] {
-  if (!md) return [];
+  if (!md || !md.trim()) return [];
   const lines = md.split('\n');
   const blocks: { id: string; heading: string; body: string }[] = [];
   let currentHeading = '';
@@ -28,13 +24,16 @@ function parseSummaryBlocks(md: string): { id: string; heading: string; body: st
   let blockIdx = 0;
 
   const flush = () => {
-    if (currentHeading || currentBody.length > 0) {
+    const body = currentBody.join('\n').trim();
+    if (currentHeading || body) {
       blocks.push({
         id: `sb_${blockIdx++}`,
         heading: currentHeading,
-        body: currentBody.join('\n').trim(),
+        body,
       });
     }
+    currentHeading = '';
+    currentBody = [];
   };
 
   for (const line of lines) {

@@ -1,3 +1,4 @@
+import asyncio
 import json
 from datetime import datetime
 from uuid import uuid4
@@ -10,6 +11,7 @@ from config import DATA_DIR
 router = APIRouter(prefix="/api/contacts", tags=["contacts"])
 
 CONTACTS_FILE = DATA_DIR / "contacts.json"
+_contacts_lock = asyncio.Lock()
 
 
 def _load_contacts() -> dict:
@@ -33,37 +35,40 @@ def list_participants():
 
 
 @router.post("/participants")
-def add_participant(req: ContactRequest):
-    data = _load_contacts()
-    entry = {
-        "id": f"p_{uuid4().hex[:12]}",
-        "name": req.name,
-        "created_at": datetime.now().strftime("%Y-%m-%d"),
-    }
-    data["participants"].append(entry)
-    _save_contacts(data)
+async def add_participant(req: ContactRequest):
+    async with _contacts_lock:
+        data = _load_contacts()
+        entry = {
+            "id": f"p_{uuid4().hex[:12]}",
+            "name": req.name,
+            "created_at": datetime.now().strftime("%Y-%m-%d"),
+        }
+        data["participants"].append(entry)
+        _save_contacts(data)
     return entry
 
 
 @router.patch("/participants/{pid}")
-def update_participant(pid: str, req: ContactRequest):
-    data = _load_contacts()
-    for p in data["participants"]:
-        if p["id"] == pid:
-            p["name"] = req.name
-            _save_contacts(data)
-            return p
+async def update_participant(pid: str, req: ContactRequest):
+    async with _contacts_lock:
+        data = _load_contacts()
+        for p in data["participants"]:
+            if p["id"] == pid:
+                p["name"] = req.name
+                _save_contacts(data)
+                return p
     raise HTTPException(status_code=404, detail="Participant not found")
 
 
 @router.delete("/participants/{pid}")
-def delete_participant(pid: str):
-    data = _load_contacts()
-    original_len = len(data["participants"])
-    data["participants"] = [p for p in data["participants"] if p["id"] != pid]
-    if len(data["participants"]) == original_len:
-        raise HTTPException(status_code=404, detail="Participant not found")
-    _save_contacts(data)
+async def delete_participant(pid: str):
+    async with _contacts_lock:
+        data = _load_contacts()
+        original_len = len(data["participants"])
+        data["participants"] = [p for p in data["participants"] if p["id"] != pid]
+        if len(data["participants"]) == original_len:
+            raise HTTPException(status_code=404, detail="Participant not found")
+        _save_contacts(data)
     return {"deleted": pid}
 
 
@@ -74,35 +79,38 @@ def list_locations():
 
 
 @router.post("/locations")
-def add_location(req: ContactRequest):
-    data = _load_contacts()
-    entry = {
-        "id": f"l_{uuid4().hex[:12]}",
-        "name": req.name,
-        "created_at": datetime.now().strftime("%Y-%m-%d"),
-    }
-    data["locations"].append(entry)
-    _save_contacts(data)
+async def add_location(req: ContactRequest):
+    async with _contacts_lock:
+        data = _load_contacts()
+        entry = {
+            "id": f"l_{uuid4().hex[:12]}",
+            "name": req.name,
+            "created_at": datetime.now().strftime("%Y-%m-%d"),
+        }
+        data["locations"].append(entry)
+        _save_contacts(data)
     return entry
 
 
 @router.patch("/locations/{lid}")
-def update_location(lid: str, req: ContactRequest):
-    data = _load_contacts()
-    for l in data["locations"]:
-        if l["id"] == lid:
-            l["name"] = req.name
-            _save_contacts(data)
-            return l
+async def update_location(lid: str, req: ContactRequest):
+    async with _contacts_lock:
+        data = _load_contacts()
+        for l in data["locations"]:
+            if l["id"] == lid:
+                l["name"] = req.name
+                _save_contacts(data)
+                return l
     raise HTTPException(status_code=404, detail="Location not found")
 
 
 @router.delete("/locations/{lid}")
-def delete_location(lid: str):
-    data = _load_contacts()
-    original_len = len(data["locations"])
-    data["locations"] = [l for l in data["locations"] if l["id"] != lid]
-    if len(data["locations"]) == original_len:
-        raise HTTPException(status_code=404, detail="Location not found")
-    _save_contacts(data)
+async def delete_location(lid: str):
+    async with _contacts_lock:
+        data = _load_contacts()
+        original_len = len(data["locations"])
+        data["locations"] = [l for l in data["locations"] if l["id"] != lid]
+        if len(data["locations"]) == original_len:
+            raise HTTPException(status_code=404, detail="Location not found")
+        _save_contacts(data)
     return {"deleted": lid}

@@ -8,9 +8,6 @@ TOLERANCE = 2.0  # seconds
 
 def _overlap(start1: float, end1: float, start2: float, end2: float) -> float:
     """Calculate overlap duration between two time ranges."""
-    overlap_start = max(start1, end1 if end1 < start1 else start1, start2)
-    overlap_end = min(end1, end2)
-    # Simpler: just compute intersection
     overlap_start = max(start1, start2)
     overlap_end = min(end1, end2)
     return max(0.0, overlap_end - overlap_start)

@@ -250,6 +250,12 @@ def update_action_items(session_id: str, req: UpdateActionItemsRequest):
     return {"ok": True}
 
 
+def _escape_md(text: str) -> str:
+    for ch in ['<', '>', '&']:
+        text = text.replace(ch, f'\\{ch}')
+    return text
+
+
 @router.post("/{session_id}/export-md")
 def export_md(session_id: str):
     """Generate and save .md file from session summary + transcript."""
@@ -269,7 +275,7 @@ def export_md(session_id: str):
             line = f"- "
             if item.get("assignee"):
                 line += f"[@{item['assignee']}] "
-            line += item.get("task", "")
+            line += _escape_md(item.get("task", ""))
             if item.get("deadline"):
                 line += f" ~{item['deadline']}"
             if item.get("source_topic"):

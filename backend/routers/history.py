@@ -122,17 +122,23 @@ def get_meeting(meeting_id: str):
 
 @router.patch("/{meeting_id}")
 def update_meeting(meeting_id: str, req: dict):
-    """Partial update of a meeting (re-edit)."""
-    import json as _json
+    """Partial update of a meeting (re-edit). Whitelisted fields only."""
     path = MEETINGS_DIR / f"{meeting_id}.json"
     if not path.exists():
         raise HTTPException(status_code=404, detail="Meeting not found")
     m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+
+    ALLOWED_TOP = {"blocks", "summary_markdown", "action_items", "keywords"}
+    ALLOWED_META = {"title", "participants", "location", "language"}
+
     for key, value in req.items():
-        if hasattr(m, key):
+        if key == "metadata" and isinstance(value, dict):
+            for mk, mv in value.items():
+                if mk in ALLOWED_META:
+                    setattr(m.metadata, mk, mv)
+        elif key in ALLOWED_TOP:
             setattr(m, key, value)
-        elif hasattr(m.metadata, key):
-            setattr(m.metadata, key, value)
+
     path.write_text(m.model_dump_json(indent=2), encoding="utf-8")
     return m.model_dump()
 
@@ -174,38 +180,41 @@ def update_meeting_block_importance(meeting_id: str, block_id: str, req: dict):
 def split_meeting_block(meeting_id: str, block_id: str, req: dict):
     from uuid import uuid4
     from models.block import Block
+
     path = MEETINGS_DIR / f"{meeting_id}.json"
     if not path.exists():
         raise HTTPException(status_code=404, detail="Meeting not found")
     m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+
     for i, block in enumerate(m.blocks):
         if block.block_id == block_id:
             pos = req.get("cursor_position", 0)
             if pos <= 0 or pos >= len(block.text):
                 raise HTTPException(status_code=400, detail="Invalid cursor position")
+
+            original_text = block.text
             original_end = block.timestamp_end
-            mid_time = block.timestamp_start + (original_end - block.timestamp_start) * (pos / len(block.text))
-            block.text = block.text[:pos].rstrip()
+            mid_time = block.timestamp_start + (original_end - block.timestamp_start) * (pos / len(original_text))
+
+            block.text = original_text[:pos].rstrip()
             block.timestamp_end = mid_time
+
             new_block = Block(
                 block_id=f"blk_{uuid4().hex[:8]}",
                 timestamp_start=mid_time,
                 timestamp_end=original_end,
-                text=block.text[pos:].lstrip() if pos < len(block.text) else "",
+                text=original_text[pos:].lstrip(),
                 source=block.source,
+                is_edited=block.is_edited,
+                importance=None,
+                importance_source=None,
+                speaker=None,
             )
-            # Fix: use original text for new block
-            full_text = block.text + " " + (req.get("_after_text") or "")
-            new_block.text = m.blocks[i].text  # already trimmed above
-            # Simpler: re-read
-            m2 = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
-            orig_text = m2.blocks[i].text
-            block.text = orig_text[:pos].rstrip()
-            new_block.text = orig_text[pos:].lstrip()
-            block.timestamp_end = mid_time
+
             m.blocks.insert(i + 1, new_block)
             path.write_text(m.model_dump_json(indent=2), encoding="utf-8")
             return {"block": block.model_dump(), "new_block": new_block.model_dump()}
+
     raise HTTPException(status_code=404, detail="Block not found")
 
 
@@ -260,7 +269,8 @@ def export_meeting_md(meeting_id: str):
             line = "- "
             if item.assignee:
                 line += f"[@{item.assignee}] "
-            line += item.task
+            task_text = item.task.replace('<', '\\<').replace('>', '\\>').replace('&', '\\&')
+            line += task_text
             if item.deadline:
                 line += f" ~{item.deadline}"
             if item.source_topic:
@@ -283,6 +293,50 @@ def export_meeting_md(meeting_id: str):
     export_path.write_text(md_content, encoding="utf-8")
 
     return {"filename": filename}
+
+
+@router.post("/{meeting_id}/resummarize")
+def resummarize_meeting(meeting_id: str):
+    """Re-generate AI summary for an existing meeting."""
+    from datetime import datetime as _dt
+    from services.claude_service import summarize_blocks
+    from services.summary_assembler import assemble_full_summary
+
+    path = MEETINGS_DIR / f"{meeting_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+
+    if not m.blocks:
+        raise HTTPException(status_code=400, detail="No blocks to summarize")
+
+    claude_response = summarize_blocks(
+        m.blocks, m.metadata.title, m.metadata.participants, m.metadata.date or "",
+    )
+
+    date_str = m.metadata.date or _dt.now().strftime("%Y-%m-%d")
+    try:
+        dt = _dt.strptime(date_str, "%Y-%m-%d")
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        date_str = f"{dt.strftime('%m/%d')}({weekdays[dt.weekday()]})"
+    except (ValueError, IndexError):
+        pass
+
+    metadata_dict = m.metadata.model_dump()
+    full_markdown, keywords, action_items = assemble_full_summary(
+        metadata_dict, claude_response, date_str, m.metadata.title,
+    )
+
+    m.summary_markdown = full_markdown
+    m.action_items = action_items
+    m.keywords = keywords
+    path.write_text(m.model_dump_json(indent=2), encoding="utf-8")
+
+    return {
+        "summary_markdown": full_markdown,
+        "action_items": action_items,
+        "keywords": keywords,
+    }
 
 
 @router.delete("/{meeting_id}")
