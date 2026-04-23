@@ -28,13 +28,30 @@ def _save_settings(settings: AppSettings) -> None:
 
 
 def _mask_response(settings: AppSettings) -> dict:
+    from config import ANTHROPIC_API_KEY, SLACK_BOT_TOKEN
+
     data = settings.model_dump()
-    token = data.get("slack", {}).get("bot_token", "")
+
+    # settings.json에 없으면 .env 값 fallback
+    token = data.get("slack", {}).get("bot_token", "") or SLACK_BOT_TOKEN
     if token and len(token) > 12:
         data["slack"]["bot_token"] = f"{token[:8]}...{token[-4:]}"
-    key = data.get("claude", {}).get("api_key", "")
+        data["slack"]["connected"] = True
+    elif token:
+        data["slack"]["bot_token"] = f"{token[:4]}..."
+        data["slack"]["connected"] = True
+    else:
+        data["slack"]["bot_token"] = ""
+        data["slack"]["connected"] = False
+
+    key = data.get("claude", {}).get("api_key", "") or ANTHROPIC_API_KEY
     if key and len(key) > 14:
         data["claude"]["api_key"] = f"{key[:10]}...{key[-4:]}"
+    elif key:
+        data["claude"]["api_key"] = f"{key[:4]}..."
+    else:
+        data["claude"]["api_key"] = ""
+
     return data
 
 

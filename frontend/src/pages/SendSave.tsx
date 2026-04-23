@@ -11,7 +11,7 @@ import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
 import { getSession } from '../api/sessions';
 import api from '../api/client';
-import { listChannels, listMessages, sendSlackMessage, deleteSlackMessage } from '../api/slack';
+import { listChannels, listMessages, sendSlackMessage, deleteSlackMessage, updateSlackMessage } from '../api/slack';
 import type { SlackChannel, SlackMessage } from '../api/slack';
 
 type SendMode = 'new' | 'thread';
@@ -53,6 +53,8 @@ export default function SendSave() {
   // Slack delete
   const [slackMessageTs, setSlackMessageTs] = useState<string | null>(null);
   const [deleteModal, setDeleteModal] = useState(false);
+  const [editMessageModal, setEditMessageModal] = useState(false);
+  const [editMessageText, setEditMessageText] = useState('');
   const [slackDeleted, setSlackDeleted] = useState(false);
 
   // Missing metadata modal
@@ -63,10 +65,12 @@ export default function SendSave() {
 
   useEffect(() => {
     setStep(7);
-    // Fetch latest session data (ensures 6단계 편집이 반영됨)
     if (session) {
       getSession(session.session_id).then(setSession).catch(() => {});
     }
+    api.get('/settings').then((res) => {
+      setExportPath(res.data.export_path || 'exports/');
+    }).catch(() => {});
   }, [setStep]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load channels
@@ -85,7 +89,7 @@ export default function SendSave() {
     if (!session) return '';
     const header = `[${session.metadata.date} ${session.metadata.title}]`;
     const summaryBullets: string[] = [];
-    if (session.summary_markdown) {
+    if (session.summary_markdown && typeof session.summary_markdown === 'string') {
       const lines = session.summary_markdown.split('\n');
       let inTopic = false;
       let foundBullet = false;
@@ -202,12 +206,20 @@ export default function SendSave() {
                 {slackDeleted ? (
                   <span className="ml-auto text-xs text-text-tertiary">삭제됨</span>
                 ) : slackMessageTs && (
-                  <button
-                    onClick={() => setDeleteModal(true)}
-                    className="ml-auto text-sm text-text-tertiary hover:text-recording cursor-pointer"
-                  >
-                    삭제
-                  </button>
+                  <div className="ml-auto flex gap-3">
+                    <button
+                      onClick={() => { setEditMessageText(buildPreviewText()); setEditMessageModal(true); }}
+                      className="text-sm text-text-tertiary hover:text-primary cursor-pointer"
+                    >
+                      수정
+                    </button>
+                    <button
+                      onClick={() => setDeleteModal(true)}
+                      className="text-sm text-text-tertiary hover:text-recording cursor-pointer"
+                    >
+                      삭제
+                    </button>
+                  </div>
                 )}
               </div>
             )}
@@ -343,17 +355,23 @@ export default function SendSave() {
                     <Loader2 size={14} className="animate-spin" /> 채널 목록 로딩 중...
                   </div>
                 ) : channels.length === 0 ? (
-                  <p className="text-sm text-text-tertiary">참여 중인 채널이 없습니다</p>
+                  <p className="text-sm text-text-tertiary">참여 중인 채널이 없습니다. Slack에서 봇을 채널에 /invite 해주세요.</p>
                 ) : (
-                  <select
-                    value={selectedChannel}
-                    onChange={(e) => setSelectedChannel(e.target.value)}
-                    className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
-                  >
-                    {channels.map((ch) => (
-                      <option key={ch.id} value={ch.id}>#{ch.name}</option>
-                    ))}
-                  </select>
+                  <div className="flex gap-2">
+                    <select
+                      value={selectedChannel}
+                      onChange={(e) => setSelectedChannel(e.target.value)}
+                      className="flex-1 bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+                    >
+                      {channels.map((ch) => (
+                        <option key={ch.id} value={ch.id}>#{ch.name}</option>
+                      ))}
+                    </select>
+                    <button onClick={() => { setChannelsLoading(true); listChannels().then((chs) => { setChannels(chs); showToast(`${chs.length}개 채널 로드됨`); }).catch(() => {}).finally(() => setChannelsLoading(false)); }}
+                      className="px-3 py-2 text-sm text-text-secondary bg-bg rounded-lg hover:bg-bg-hover cursor-pointer shrink-0" title="새로고침">
+                      ↻
+                    </button>
+                  </div>
                 )}
               </div>
 
@@ -505,6 +523,31 @@ export default function SendSave() {
         </div>
 
       </div>
+
+      {/* Edit Slack message modal */}
+      <Modal open={editMessageModal} onClose={() => setEditMessageModal(false)}>
+        <h3 className="text-lg font-semibold text-text mb-2">메시지 수정</h3>
+        <textarea
+          value={editMessageText}
+          onChange={(e) => setEditMessageText(e.target.value)}
+          className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[120px]"
+          rows={6}
+        />
+        <div className="flex gap-2 justify-end mt-4">
+          <button onClick={() => setEditMessageModal(false)}
+            className="px-4 py-2 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer">취소</button>
+          <button onClick={async () => {
+            if (!slackMessageTs || !selectedChannel) return;
+            try {
+              await updateSlackMessage(selectedChannel, slackMessageTs, editMessageText);
+              showToast('메시지 수정 완료');
+              setEditMessageModal(false);
+            } catch (e: any) {
+              showToast(e?.response?.data?.detail || '수정 실패 — 권한이 없습니다');
+            }
+          }} className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">저장</button>
+        </div>
+      </Modal>
 
       {/* Delete Slack message modal */}
       <Modal open={deleteModal} onClose={() => setDeleteModal(false)}>

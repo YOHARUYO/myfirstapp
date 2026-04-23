@@ -18,9 +18,24 @@ _user_cache: dict[str, str] = {}
 
 def _get_slack_client():
     from slack_sdk import WebClient
-    if not SLACK_BOT_TOKEN:
+    import json as _json
+
+    # settings.json 우선, .env fallback
+    token = SLACK_BOT_TOKEN
+    settings_path = DATA_DIR / "settings.json"
+    if settings_path.exists():
+        try:
+            s = _json.loads(settings_path.read_text(encoding="utf-8"))
+            saved = s.get("slack", {}).get("bot_token", "")
+            # WARNING: 마스킹된 값("...") 또는 빈 문자열이면 사용하지 않음
+            if saved and "..." not in saved and len(saved) > 10:
+                token = saved
+        except Exception:
+            pass
+
+    if not token:
         raise HTTPException(status_code=500, detail="Slack Bot Token이 설정되지 않았습니다")
-    return WebClient(token=SLACK_BOT_TOKEN)
+    return WebClient(token=token)
 
 
 def _load_session(session_id: str) -> Session | Meeting:
@@ -76,25 +91,34 @@ def _resolve_user_name(client, user_id: str) -> tuple[str, bool]:
             user.get("profile", {}).get("display_name")
             or user.get("real_name")
             or user.get("name")
-            or user_id
+            or f"사용자({user_id[-4:]})"
         )
         _user_cache[user_id] = name
         return name, is_bot
     except Exception:
-        return user_id, False
+        fallback = f"사용자({user_id[-4:]})" if user_id else "Unknown"
+        _user_cache[user_id] = fallback
+        return fallback, False
 
 
 @router.get("/channels")
 def list_channels():
-    """List channels the bot has joined."""
+    """List channels the bot has joined (all pages)."""
     client = _get_slack_client()
     try:
-        result = client.conversations_list(types="public_channel,private_channel", limit=200)
-        channels = [
-            {"id": ch["id"], "name": ch["name"]}
-            for ch in result.get("channels", [])
-            if ch.get("is_member")
-        ]
+        channels = []
+        cursor = None
+        while True:
+            kwargs = {"types": "public_channel,private_channel", "limit": 200}
+            if cursor:
+                kwargs["cursor"] = cursor
+            result = client.conversations_list(**kwargs)
+            for ch in result.get("channels", []):
+                if ch.get("is_member"):
+                    channels.append({"id": ch["id"], "name": ch["name"]})
+            cursor = result.get("response_metadata", {}).get("next_cursor")
+            if not cursor:
+                break
         return {"channels": channels}
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Slack API 오류: {str(e)}")
@@ -265,6 +289,26 @@ def send_slack_message(req: SlackSendRequest):
         channel_info = client.conversations_info(channel=req.channel_id)
         channel_name = channel_info.get("channel", {}).get("name", req.channel_id)
 
+        # Update Meeting JSON with slack_sent info
+        import json as _j2
+        from datetime import datetime as _dt2
+        meeting_path = MEETINGS_DIR / f"{req.session_id}.json"
+        if meeting_path.exists():
+            try:
+                m_data = _j2.loads(meeting_path.read_text(encoding="utf-8"))
+                m_data["slack_sent"] = {
+                    "channel_id": req.channel_id,
+                    "channel_name": f"#{channel_name}",
+                    "thread_ts": req.thread_ts,
+                    "message_ts": message_ts,
+                    "sent_at": _dt2.now().isoformat(),
+                    "deleted": False,
+                    "deleted_at": None,
+                }
+                meeting_path.write_text(_j2.dumps(m_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+
         return {
             "success": True,
             "channel_name": f"#{channel_name}",
@@ -279,6 +323,28 @@ def send_slack_message(req: SlackSendRequest):
 class SlackDeleteRequest(BaseModel):
     channel_id: str
     message_ts: str
+
+
+class SlackUpdateRequest(BaseModel):
+    channel_id: str
+    message_ts: str
+    text: str
+
+
+@router.patch("/message")
+def update_slack_message(req: SlackUpdateRequest):
+    """Update a bot-sent Slack message text. Attachments are not modified."""
+    client = _get_slack_client()
+    try:
+        client.chat_update(channel=req.channel_id, ts=req.message_ts, text=req.text)
+    except Exception as e:
+        error_str = str(e)
+        if "message_not_found" in error_str:
+            raise HTTPException(status_code=404, detail="메시지를 찾을 수 없습니다")
+        if "cant_update_message" in error_str or "not_authed" in error_str:
+            raise HTTPException(status_code=403, detail="수정 권한이 없습니다 (봇이 보낸 메시지만 수정 가능)")
+        raise HTTPException(status_code=500, detail=f"수정 실패: {error_str}")
+    return {"success": True, "message_ts": req.message_ts}
 
 
 @router.delete("/message")

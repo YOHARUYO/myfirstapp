@@ -196,31 +196,36 @@ def summarize_session(session_id: str):
     if not session.blocks:
         raise HTTPException(status_code=400, detail="No blocks to summarize")
 
-    claude_response = summarize_blocks(
-        session.blocks,
-        session.metadata.title,
-        session.metadata.participants,
-        session.metadata.date or "",
-    )
-
-    date_str = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
     try:
-        dt = datetime.strptime(date_str, "%Y-%m-%d")
-        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
-        date_str = f"{dt.strftime('%m/%d')}({weekdays[dt.weekday()]})"
-    except (ValueError, IndexError):
-        pass
+        claude_response = summarize_blocks(
+            session.blocks,
+            session.metadata.title,
+            session.metadata.participants,
+            session.metadata.date or "",
+        )
 
-    metadata_dict = session.metadata.model_dump()
-    full_markdown, keywords, action_items = assemble_full_summary(
-        metadata_dict, claude_response, date_str, session.metadata.title,
-    )
+        date_str = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
+        try:
+            dt = datetime.strptime(date_str, "%Y-%m-%d")
+            weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+            date_str = f"{dt.strftime('%m/%d')}({weekdays[dt.weekday()]})"
+        except (ValueError, IndexError):
+            pass
 
-    session.summary_markdown = full_markdown
-    session.action_items = action_items
-    session.keywords = keywords
-    session.status = "summarizing"
-    _save_session(session)
+        metadata_dict = session.metadata.model_dump()
+        full_markdown, keywords, action_items = assemble_full_summary(
+            metadata_dict, claude_response, date_str, session.metadata.title,
+        )
+
+        session.summary_markdown = full_markdown
+        session.action_items = action_items
+        session.keywords = keywords
+        session.status = "summarizing"
+        _save_session(session)
+    except Exception as e:
+        session.status = "editing"
+        _save_session(session)
+        raise HTTPException(status_code=500, detail=f"요약 생성 실패: {str(e)}")
 
     return {
         "summary_markdown": full_markdown,
@@ -411,8 +416,13 @@ def merge_block(session_id: str, block_id: str, req: MergeDirection):
                 target = session.blocks[i + 1]
                 block.text = block.text + " " + target.text
                 block.timestamp_end = target.timestamp_end
-                # Higher importance wins
-                if target.importance and (not block.importance or _imp_rank(target.importance) > _imp_rank(block.importance)):
+                # User tags always win, then higher importance
+                if block.importance_source == "user":
+                    pass
+                elif target.importance_source == "user":
+                    block.importance = target.importance
+                    block.importance_source = "user"
+                elif target.importance and (not block.importance or _imp_rank(target.importance) > _imp_rank(block.importance)):
                     block.importance = target.importance
                     block.importance_source = target.importance_source
                 block.is_edited = True
@@ -423,7 +433,12 @@ def merge_block(session_id: str, block_id: str, req: MergeDirection):
                 prev = session.blocks[i - 1]
                 prev.text = prev.text + " " + block.text
                 prev.timestamp_end = block.timestamp_end
-                if block.importance and (not prev.importance or _imp_rank(block.importance) > _imp_rank(prev.importance)):
+                if prev.importance_source == "user":
+                    pass
+                elif block.importance_source == "user":
+                    prev.importance = block.importance
+                    prev.importance_source = "user"
+                elif block.importance and (not prev.importance or _imp_rank(block.importance) > _imp_rank(prev.importance)):
                     prev.importance = block.importance
                     prev.importance_source = block.importance_source
                 prev.is_edited = True

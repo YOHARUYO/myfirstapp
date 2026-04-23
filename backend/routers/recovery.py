@@ -28,4 +28,5 @@ def list_recoverable():
                         })
                 except Exception:
                     continue
+    results.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return results

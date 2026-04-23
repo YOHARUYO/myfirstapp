@@ -36,6 +36,7 @@ export default function Editing() {
   const navigate = useNavigate();
   const setStep = useWizardStore((s) => s.setStep);
   const setEditedAfterSummary = useWizardStore((s) => s.setEditedAfterSummary);
+  const clearEditedAfterSummary = useWizardStore((s) => s.clearEditedAfterSummary);
   const session = useSessionStore((s) => s.session);
   const setSession = useSessionStore((s) => s.setSession);
   const editMode = useSessionStore((s) => s.editMode);
@@ -80,9 +81,13 @@ export default function Editing() {
 
   useEffect(() => {
     setStep(5);
+    // editMode 잔류 정리: session ID가 mtg_가 아닌데 meeting 모드면 초기화
+    if (session && !session.session_id.startsWith('mtg_') && editMode === 'meeting') {
+      useSessionStore.getState().setEditMode('session');
+    }
     listParticipants().then(setContactParticipants).catch(() => {});
     listLocations().then(setContactLocations).catch(() => {});
-  }, [setStep]);
+  }, [setStep]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load blocks from server on mount (ensures latest data from step 3)
   useEffect(() => {
@@ -286,7 +291,10 @@ export default function Editing() {
   // Keyboard shortcuts
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
-      // Undo/Redo
+      // Skip if editing text (let browser handle Ctrl+Z in textarea)
+      if (editingBlockId) return;
+
+      // Undo/Redo (only when not editing)
       if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
         e.preventDefault();
         handleUndo();
@@ -297,9 +305,6 @@ export default function Editing() {
         handleRedo();
         return;
       }
-
-      // Skip if editing text
-      if (editingBlockId) return;
 
       // Skip if focus is in an input field
       const target = e.target as HTMLElement;
@@ -366,6 +371,7 @@ export default function Editing() {
 
   const handleSkipToSend = () => {
     setSkipSummaryModal(false);
+    clearEditedAfterSummary();
     navigate('/send');
   };
 
@@ -586,7 +592,7 @@ export default function Editing() {
             return (
               <div
                 key={block.block_id}
-                className={`group flex items-start gap-1.5 py-2 rounded-lg px-3 -mx-3 transition-colors ${
+                className={`group relative flex items-start gap-1.5 py-2 rounded-lg px-3 -mx-3 transition-colors ${
                   isFocused ? 'bg-bg-subtle' : 'hover:bg-bg-subtle'
                 }`}
                 onClick={() => setFocusedBlockId(block.block_id)}
@@ -638,7 +644,7 @@ export default function Editing() {
                   <textarea
                     ref={editInputRef}
                     value={editingText}
-                    onChange={(e) => setEditingText(e.target.value)}
+                    onChange={(e) => { setEditingText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
                     onKeyDown={(e) => {
                       // Ctrl+Enter (Cmd+Enter): 블록 분할
                       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -674,7 +680,8 @@ export default function Editing() {
                     }}
                     onBlur={handleEditConfirm}
                     className="flex-1 text-[15px] text-text leading-relaxed bg-bg ring-2 ring-primary rounded-lg px-3 py-1 resize-none focus:outline-none"
-                    rows={Math.max(1, Math.ceil(editingText.length / 60))}
+                    style={{ minHeight: '2rem' }}
+                    ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                   />
                 ) : (
                   <p
@@ -687,11 +694,11 @@ export default function Editing() {
 
                 {/* Hover merge menu */}
                 {!editingBlockId && isFocused && (
-                  <div className="shrink-0 flex flex-col gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <div className="absolute -right-2 top-0 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col gap-0.5 z-10">
                     {blocks.indexOf(block) > 0 && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleMerge(block.block_id, 'prev'); }}
-                        className="text-[10px] text-text-tertiary hover:text-text px-1.5 py-0.5 rounded hover:bg-bg-hover cursor-pointer whitespace-nowrap"
+                        className="text-[10px] text-text-tertiary hover:text-text px-1.5 py-0.5 rounded bg-bg shadow-sm hover:bg-bg-hover cursor-pointer whitespace-nowrap"
                         title="위와 합치기"
                       >
                         ↑ 합치기
@@ -700,7 +707,7 @@ export default function Editing() {
                     {blocks.indexOf(block) < blocks.length - 1 && (
                       <button
                         onClick={(e) => { e.stopPropagation(); handleMerge(block.block_id, 'next'); }}
-                        className="text-[10px] text-text-tertiary hover:text-text px-1.5 py-0.5 rounded hover:bg-bg-hover cursor-pointer whitespace-nowrap"
+                        className="text-[10px] text-text-tertiary hover:text-text px-1.5 py-0.5 rounded bg-bg shadow-sm hover:bg-bg-hover cursor-pointer whitespace-nowrap"
                         title="아래와 합치기"
                       >
                         ↓ 합치기

@@ -7,7 +7,7 @@ import {
 import Modal from '../components/common/Modal';
 import Toast from '../components/common/Toast';
 import { getMeeting } from '../api/history';
-import { deleteSlackMessage } from '../api/slack';
+import { deleteSlackMessage, updateSlackMessage } from '../api/slack';
 import { useSessionStore } from '../stores/sessionStore';
 import api from '../api/client';
 import type { Meeting, ActionItem, Session } from '../types';
@@ -32,6 +32,8 @@ export default function HistoryDetail() {
   const [transcriptExpanded, setTranscriptExpanded] = useState(false);
   const [tsMode, setTsMode] = useState<'relative' | 'absolute'>('relative');
   const [deleteModal, setDeleteModal] = useState(false);
+  const [editMsgModal, setEditMsgModal] = useState(false);
+  const [editMsgText, setEditMsgText] = useState('');
   const [deleteMeetingModal, setDeleteMeetingModal] = useState(false);
   const [toast, setToast] = useState({ message: '', visible: false });
 
@@ -163,13 +165,22 @@ export default function HistoryDetail() {
             {slackSent.deleted && <span className="text-text-tertiary"> · 삭제됨</span>}
           </p>
           {!slackSent.deleted && (
-            <button
-              onClick={() => setDeleteModal(true)}
-              className="mt-2 flex items-center gap-1.5 text-sm text-text-tertiary hover:text-recording cursor-pointer"
-            >
-              <Trash2 size={14} />
-              메시지 삭제
-            </button>
+            <div className="mt-2 flex gap-4">
+              <button
+                onClick={() => { setEditMsgText(''); setEditMsgModal(true); }}
+                className="flex items-center gap-1.5 text-sm text-text-tertiary hover:text-primary cursor-pointer"
+              >
+                <Pencil size={14} />
+                메시지 수정
+              </button>
+              <button
+                onClick={() => setDeleteModal(true)}
+                className="flex items-center gap-1.5 text-sm text-text-tertiary hover:text-recording cursor-pointer"
+              >
+                <Trash2 size={14} />
+                메시지 삭제
+              </button>
+            </div>
           )}
         </div>
       )}
@@ -339,6 +350,27 @@ export default function HistoryDetail() {
           삭제
         </button>
       </div>
+
+      {/* Edit Slack message modal */}
+      <Modal open={editMsgModal} onClose={() => setEditMsgModal(false)}>
+        <h3 className="text-lg font-semibold text-text mb-2">메시지 수정</h3>
+        <textarea value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)}
+          className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[120px]" rows={6} />
+        <div className="flex gap-2 justify-end mt-4">
+          <button onClick={() => setEditMsgModal(false)}
+            className="px-4 py-2 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer">취소</button>
+          <button onClick={async () => {
+            if (!meeting?.slack_sent) return;
+            try {
+              await updateSlackMessage(meeting.slack_sent.channel_id, meeting.slack_sent.message_ts, editMsgText);
+              showToast('메시지 수정 완료');
+              setEditMsgModal(false);
+            } catch (e: any) {
+              showToast(e?.response?.data?.detail || '수정 실패 — 권한이 없습니다');
+            }
+          }} className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">저장</button>
+        </div>
+      </Modal>
 
       {/* Delete meeting modal */}
       <Modal open={deleteMeetingModal} onClose={() => setDeleteMeetingModal(false)}>

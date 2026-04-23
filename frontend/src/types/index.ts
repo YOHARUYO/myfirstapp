@@ -114,6 +114,7 @@ export interface Template {
   template_id: string;
   name: string;
   defaults: TemplateDefaults;
+  order: number;
   created_at: string;
   updated_at: string;
 }

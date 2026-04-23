@@ -56,6 +56,12 @@ def _update_stage(session_id: str, stage: str, status: str, progress: float = 0.
         state["stages"][stage]["progress"] = progress
 
 
+async def _cleanup_state(session_id: str):
+    """Remove processing state after 30s (allows status polling to finish)."""
+    await asyncio.sleep(30)
+    _processing_state.pop(session_id, None)
+
+
 async def _run_processing(session_id: str):
     """Background processing pipeline: audio merge → Whisper → block merge → AI tagging."""
     from services.audio_service import merge_audio_chunks, get_uploaded_audio
@@ -150,18 +156,20 @@ async def _run_processing(session_id: str):
             await asyncio.to_thread(_save_session, session)
 
         state["status"] = "completed"
+        asyncio.create_task(_cleanup_state(session_id))
 
     except Exception as e:
         state["status"] = "error"
         state["error"] = str(e)
 
-        # Revert session status so user can retry
         try:
             session = await asyncio.to_thread(_load_session, session_id)
             session.status = "post_recording"
             await asyncio.to_thread(_save_session, session)
         except Exception:
             pass
+
+        asyncio.create_task(_cleanup_state(session_id))
 
 
 @router.post("/{session_id}/process")

@@ -1,6 +1,6 @@
 import { useRef, useCallback, useState } from 'react';
 
-const SILENCE_TIMEOUT_MS = 1500;
+const SILENCE_TIMEOUT_MS = 2500;
 const NO_SPEECH_MAX_RETRIES = 10; // [FIX-2] no-speech 연속 최대 재시도
 const NO_SPEECH_TOAST_THRESHOLD = 5; // [FIX-1] 이 횟수 이후 사용자에게 1회 안내
 

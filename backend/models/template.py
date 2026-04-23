@@ -15,5 +15,6 @@ class Template(BaseModel):
     template_id: str
     name: str
     defaults: TemplateDefaults = Field(default_factory=TemplateDefaults)
+    order: int = 0
     created_at: str = Field(default_factory=lambda: datetime.now().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.now().isoformat())

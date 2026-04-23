@@ -54,14 +54,16 @@ export default function Home() {
       const session = await getSession(r.session_id);
       setSession(session);
       navigate(STATUS_ROUTES[r.status] || '/setup');
-    } catch {}
+    } catch {
+      setLoadError(true);
+    }
   };
 
   const handleDeleteSession = async (sessionId: string) => {
     try {
       await deleteSession(sessionId);
       setRecoverable((prev) => prev.filter((r) => r.session_id !== sessionId));
-    } catch {}
+    } catch { setLoadError(true); }
   };
 
   return (
@@ -75,8 +77,8 @@ export default function Home() {
 
       {/* 복구 배너 */}
       {recoverable.map((r) => (
-        <div key={r.session_id} className="w-full mb-8 bg-bg-subtle rounded-xl p-5">
-          <p className="text-sm font-medium text-text">진행 중인 회의가 있습니다</p>
+        <div key={r.session_id} className="w-full mb-8 bg-warning-bg border border-warning/20 rounded-xl p-5">
+          <p className="text-sm font-medium text-warning-text">진행 중인 회의가 있습니다</p>
           <p className="text-[15px] text-text mt-2">
             {r.title || '제목 없음'} · {r.date}
             {r.participants.length > 0 && ` · ${r.participants[0]}${r.participants.length > 1 ? ` 외 ${r.participants.length - 1}명` : ''}`}

@@ -57,6 +57,19 @@ export async function deleteSlackMessage(
   return res.data;
 }
 
+export async function updateSlackMessage(
+  channelId: string,
+  messageTs: string,
+  text: string,
+): Promise<{ success: boolean; message_ts: string }> {
+  const res = await api.patch('/slack/message', {
+    channel_id: channelId,
+    message_ts: messageTs,
+    text,
+  });
+  return res.data;
+}
+
 export async function testConnection(): Promise<{ ok: boolean; bot_name?: string; error?: string }> {
   const res = await api.get('/slack/test');
   return res.data;

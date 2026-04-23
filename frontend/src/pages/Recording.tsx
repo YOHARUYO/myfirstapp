@@ -565,12 +565,13 @@ export default function Recording() {
                 <input
                   type="range"
                   min="0.5"
-                  max="3.0"
+                  max="5.0"
                   step="0.1"
                   value={micSensitivity}
                   onChange={(e) => { const v = parseFloat(e.target.value); setMicSensitivity(v); audioStream.setGain(v); }}
                   className="w-full accent-primary"
                 />
+                {/* WARNING: 5x 이상에서 GainNode 증폭으로 오디오 클리핑/왜곡 발생 가능 */}
               </div>
             </div>
           )}
@@ -656,7 +657,7 @@ export default function Recording() {
                     <textarea
                       ref={editInputRef}
                       value={editingText}
-                      onChange={(e) => setEditingText(e.target.value)}
+                      onChange={(e) => { setEditingText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && e.shiftKey) return; // 줄바꿈
                         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
@@ -678,7 +679,8 @@ export default function Recording() {
                       }}
                       onBlur={handleEditConfirm}
                       className="flex-1 text-[15px] text-text leading-relaxed bg-bg ring-2 ring-primary rounded-lg px-3 py-1 resize-none focus:outline-none"
-                      rows={Math.max(1, Math.ceil(editingText.length / 60))}
+                      style={{ minHeight: '2rem' }}
+                      ref={(el) => { if (el) { el.style.height = 'auto'; el.style.height = el.scrollHeight + 'px'; } }}
                     />
                   ) : (
                     /* 더블클릭=편집 */

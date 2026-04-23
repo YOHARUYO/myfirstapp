@@ -315,10 +315,17 @@ myfirstapp/
     "language": "ko-KR",
     "slack_channel_id": "C1234567"
   },
+  "order": 0,
   "created_at": "2026-04-10T10:00:00",
   "updated_at": "2026-04-10T10:00:00"
 }
 ```
+
+| 필드 | 타입 | 설명 |
+|------|------|------|
+| `order` | int | 표시 순서 (드래그로 변경 가능, 0부터 시작) |
+
+> **템플릿 순서 변경 API**: `PATCH /api/templates/reorder` — 요청 바디: `{ "order": ["tpl_id_1", "tpl_id_2", ...] }`. 전체 순서를 한 번에 저장. 프론트에서 드래그 완료 시 호출.
 
 ### 3-5. 설정 (Settings)
 ```json
@@ -533,6 +540,7 @@ myfirstapp/
 | `GET` | `/api/slack/channels/{id}/messages?limit=20` | 채널 최근 메시지 (스레드 선택용, 가공된 카드 데이터) |
 | `POST` | `/api/slack/send` | 메시지 전송 (+ .md 파일 첨부, 아래 요청 바디 참조) |
 | `DELETE` | `/api/slack/message` | 봇이 보낸 Slack 메시지 삭제 (`chat.delete`) |
+| `PATCH` | `/api/slack/message` | 봇이 보낸 Slack 메시지 수정 (`chat.update`, 시간 제한 없음) |
 | `GET` | `/api/slack/test` | 연결 테스트 |
 
 **`POST /api/slack/send` 요청 바디**:
@@ -608,13 +616,35 @@ myfirstapp/
 }
 ```
 
+**`PATCH /api/slack/message` 요청 바디**:
+```json
+{
+  "channel_id": "C1234567",
+  "message_ts": "1713267000.000100",
+  "text": "수정된 메시지 본문"
+}
+```
+- `chat.update` API 호출. 봇이 보낸 메시지만 수정 가능 (시간 제한 없음)
+- 첨부 파일은 수정 불가 (텍스트 본문만)
+
+**`PATCH /api/slack/message` 응답 바디**:
+```json
+{
+  "success": true,
+  "message_ts": "1713267000.000100"
+}
+```
+
 ### 4-9. 템플릿 / 주소록 / 설정
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `GET/POST/PATCH/DELETE` | `/api/templates[/{id}]` | 템플릿 CRUD |
+| `PATCH` | `/api/templates/reorder` | 템플릿 순서 변경 (`{ "order": ["tpl_id_1", ...] }`) |
 | `GET/POST/PATCH/DELETE` | `/api/contacts/participants[/{id}]` | 참여자 CRUD |
 | `GET/POST/PATCH/DELETE` | `/api/contacts/locations[/{id}]` | 장소 CRUD |
 | `GET/PATCH` | `/api/settings` | 설정 조회/수정 |
+
+> **API 설정 표시 로직**: `GET /api/settings` 응답 시, `.env`에 토큰이 있으면 마스킹하여 표시 (`sk-ant-●●●●`). `settings.json`에 없더라도 `.env`에 있으면 "설정됨"으로 판단. 두 소스의 병합: `.env` 값이 우선, `settings.json`은 사용자 커스텀 설정(인사 문구, 모델 선택 등)용.
 
 ### 4-10. 복구
 | Method | Endpoint | 설명 |
@@ -774,6 +804,9 @@ def merge_audio_chunks(chunks_dir: str, output_path: str):
 ```
 
 ### Web Speech API (프론트엔드)
+
+**침묵 타임아웃**: `SILENCE_TIMEOUT_MS = 2500` (2.5초). 이 시간 동안 음성이 감지되지 않으면 현재 interim을 abort+restart로 확정. 1.5초는 생각하며 말할 때 문장이 중간에 끊기므로 2.5초로 상향.
+
 ```javascript
 const recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
 recognition.lang = 'ko-KR';

@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   ArrowLeft, Plus, Pencil, Trash2, Check, X,
-  Sun, Moon, Monitor, Loader2,
+  Sun, Moon, Monitor, Loader2, GripVertical,
 } from 'lucide-react';
+import { DndContext, closestCenter, type DragEndEvent } from '@dnd-kit/core';
+import { SortableContext, useSortable, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import Modal from '../components/common/Modal';
 import Toast from '../components/common/Toast';
 import TagInput from '../components/common/TagInput';
@@ -25,6 +28,26 @@ interface AppSettings {
   export_path: string;
 }
 
+function SortableTemplateItem({ tpl, onEdit, onDelete }: { tpl: Template; onEdit: () => void; onDelete: () => void }) {
+  const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: tpl.template_id });
+  const style = { transform: CSS.Transform.toString(transform), transition };
+
+  return (
+    <div ref={setNodeRef} style={style} className="flex items-center justify-between bg-bg-subtle rounded-xl p-4">
+      <div className="flex items-center gap-2">
+        <button {...attributes} {...listeners} className="cursor-grab text-text-tertiary hover:text-text touch-none">
+          <GripVertical size={16} />
+        </button>
+        <span className="text-[15px] text-text font-medium">{tpl.name}</span>
+      </div>
+      <div className="flex gap-2">
+        <button onClick={onEdit} className="p-1.5 text-text-tertiary hover:text-text cursor-pointer"><Pencil size={14} /></button>
+        <button onClick={onDelete} className="p-1.5 text-text-tertiary hover:text-recording cursor-pointer"><Trash2 size={14} /></button>
+      </div>
+    </div>
+  );
+}
+
 export default function Settings() {
   const navigate = useNavigate();
 
@@ -41,6 +64,7 @@ export default function Settings() {
   const [editingSlackToken, setEditingSlackToken] = useState(false);
   const [newSlackToken, setNewSlackToken] = useState('');
   const [whisperModel, setWhisperModel] = useState('medium');
+  const [micSensitivity, setMicSensitivity] = useState(1.0);
   const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
 
   // Templates
@@ -81,6 +105,7 @@ export default function Settings() {
       setSettings(s);
       setGreeting(s.slack_greeting || '');
       setWhisperModel(s.whisper?.model || 'medium');
+      setMicSensitivity(s.mic_sensitivity || 1.0);
       setTemplates(t);
       setParticipants(p);
       setLocations(l);
@@ -194,6 +219,18 @@ export default function Settings() {
     } catch { showToast('저장 실패'); }
   };
 
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const oldIndex = templates.findIndex((t) => t.template_id === active.id);
+    const newIndex = templates.findIndex((t) => t.template_id === over.id);
+    const reordered = arrayMove(templates, oldIndex, newIndex);
+    setTemplates(reordered);
+    try {
+      await api.patch('/templates/reorder', { order: reordered.map((t) => t.template_id) });
+    } catch {}
+  };
+
   const handleDeleteTemplate = async (id: string) => {
     try {
       await api.delete(`/templates/${id}`);
@@ -278,20 +315,14 @@ export default function Settings() {
       {/* Templates */}
       <section className="mt-20">
         <h2 className="text-[28px] font-bold text-text mb-6">회의 템플릿</h2>
-        <div className="space-y-2">
-          {templates.map((tpl) => (
-            <div key={tpl.template_id} className="flex items-center justify-between bg-bg-subtle rounded-xl p-4">
-              <span className="text-[15px] text-text font-medium">{tpl.name}</span>
-              <div className="flex gap-2">
-                <button onClick={() => openTemplateModal(tpl)} className="p-1.5 text-text-tertiary hover:text-text cursor-pointer">
-                  <Pencil size={14} />
-                </button>
-                <button onClick={() => setDeleteTemplateId(tpl.template_id)} className="p-1.5 text-text-tertiary hover:text-recording cursor-pointer">
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+        <DndContext collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={templates.map((t) => t.template_id)} strategy={verticalListSortingStrategy}>
+            <div className="space-y-2">
+              {templates.map((tpl) => (
+                <SortableTemplateItem key={tpl.template_id} tpl={tpl}
+                  onEdit={() => openTemplateModal(tpl)}
+                  onDelete={() => setDeleteTemplateId(tpl.template_id)} />
+              ))}
           <button
             onClick={() => openTemplateModal()}
             className="flex items-center gap-1.5 px-4 py-3 text-sm font-medium text-text-secondary hover:text-text cursor-pointer"
@@ -299,19 +330,21 @@ export default function Settings() {
             <Plus size={14} />
             새 템플릿
           </button>
-        </div>
+            </div>
+          </SortableContext>
+        </DndContext>
       </section>
 
       {/* Contacts */}
       <section className="mt-20">
         <h2 className="text-[28px] font-bold text-text mb-6">주소록</h2>
         <h3 className="text-xl font-semibold text-text mb-3">참여자</h3>
-        <div className="space-y-1 mb-3">
+        <div className="flex flex-wrap gap-2 mb-3">
           {participants.map((p) => (
-            <div key={p.id} className="flex items-center justify-between py-1.5 px-3">
-              <span className="text-sm text-text">{p.name}</span>
-              <button onClick={() => handleDeleteContact('participants', p.id)} className="text-text-tertiary hover:text-recording cursor-pointer"><X size={14} /></button>
-            </div>
+            <span key={p.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-bg rounded-full text-sm text-text ring-1 ring-border-light">
+              {p.name}
+              <button onClick={() => handleDeleteContact('participants', p.id)} className="text-text-tertiary hover:text-recording cursor-pointer"><X size={12} /></button>
+            </span>
           ))}
         </div>
         <div className="flex gap-2">
@@ -322,12 +355,12 @@ export default function Settings() {
         </div>
 
         <h3 className="text-xl font-semibold text-text mb-3 mt-8">장소</h3>
-        <div className="space-y-1 mb-3">
+        <div className="flex flex-wrap gap-2 mb-3">
           {locations.map((l) => (
-            <div key={l.id} className="flex items-center justify-between py-1.5 px-3">
-              <span className="text-sm text-text">{l.name}</span>
-              <button onClick={() => handleDeleteContact('locations', l.id)} className="text-text-tertiary hover:text-recording cursor-pointer"><X size={14} /></button>
-            </div>
+            <span key={l.id} className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-bg rounded-full text-sm text-text ring-1 ring-border-light">
+              {l.name}
+              <button onClick={() => handleDeleteContact('locations', l.id)} className="text-text-tertiary hover:text-recording cursor-pointer"><X size={12} /></button>
+            </span>
           ))}
         </div>
         <div className="flex gap-2">
@@ -395,6 +428,16 @@ export default function Settings() {
               <option value="medium">medium (~5-8분, 높음) — 추천</option>
               <option value="large">large (~15분+, 최고)</option>
             </select>
+          </div>
+
+          <div className="bg-bg-subtle rounded-xl p-4">
+            <p className="text-[15px] font-medium text-text">마이크 민감도</p>
+            <p className="text-xs text-text-tertiary mt-0.5">녹음 시 기본 민감도 ({micSensitivity.toFixed(1)}x)</p>
+            {/* WARNING: 5x 이상에서 GainNode 증폭으로 오디오 클리핑/왜곡 발생 가능. Whisper 인식률 저하 위험 */}
+            <input type="range" min="0.5" max="5.0" step="0.1" value={micSensitivity}
+              onChange={(e) => { const v = parseFloat(e.target.value); setMicSensitivity(v); api.patch('/settings', { mic_sensitivity: v }).catch(() => {}); }}
+              className="w-full mt-3 accent-primary cursor-pointer" />
+            <div className="flex justify-between text-xs text-text-tertiary mt-1"><span>0.5x</span><span>5.0x</span></div>
           </div>
         </div>
       </section>

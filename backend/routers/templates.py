@@ -30,7 +30,25 @@ def _save_templates(templates: list[Template]) -> None:
 
 @router.get("")
 def list_templates():
-    return [t.model_dump() for t in _load_templates()]
+    templates = _load_templates()
+    templates.sort(key=lambda t: t.order)
+    return [t.model_dump() for t in templates]
+
+
+class ReorderRequest(BaseModel):
+    order: List[str]
+
+
+@router.patch("/reorder")
+async def reorder_templates(req: ReorderRequest):
+    async with _templates_lock:
+        templates = _load_templates()
+        id_map = {t.template_id: t for t in templates}
+        for idx, tid in enumerate(req.order):
+            if tid in id_map:
+                id_map[tid].order = idx
+        _save_templates(templates)
+    return {"success": True}
 
 
 class CreateTemplateRequest(BaseModel):
