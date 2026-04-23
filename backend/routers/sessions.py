@@ -41,15 +41,22 @@ def _save_session(session: Session) -> None:
 
 
 def _has_active_session() -> Optional[str]:
+    from datetime import timedelta
     if not SESSIONS_DIR.exists():
         return None
+    cutoff = (datetime.now() - timedelta(hours=24)).isoformat()
     for d in SESSIONS_DIR.iterdir():
         if d.is_dir():
             sf = d / "session.json"
             if sf.exists():
-                s = Session.model_validate_json(sf.read_text(encoding="utf-8"))
-                if s.status != "completed":
-                    return s.session_id
+                try:
+                    s = Session.model_validate_json(sf.read_text(encoding="utf-8"))
+                    if s.status != "completed":
+                        if s.status == "idle" and s.created_at < cutoff:
+                            continue
+                        return s.session_id
+                except Exception:
+                    continue
     return None
 
 
@@ -305,9 +312,15 @@ def export_md(session_id: str):
 @router.delete("/{session_id}")
 def delete_session(session_id: str):
     import shutil
+    _validate_session_id(session_id)
     session_dir = SESSIONS_DIR / session_id
     if not session_dir.exists():
         raise HTTPException(status_code=404, detail="Session not found")
+
+    session = _load_session(session_id)
+    if session.status == "processing":
+        raise HTTPException(status_code=409, detail="처리 중인 세션은 삭제할 수 없습니다. 처리 완료 후 다시 시도해주세요.")
+
     shutil.rmtree(session_dir)
     return {"deleted": session_id}
 

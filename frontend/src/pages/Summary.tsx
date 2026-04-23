@@ -9,7 +9,8 @@ import Toast from '../components/common/Toast';
 import Modal from '../components/common/Modal';
 import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { summarizeSession, getSession, updateSummaryMarkdown, updateActionItems } from '../api/sessions';
+import { summarizeSession, getSession } from '../api/sessions';
+import api from '../api/client';
 import type { ActionItem } from '../types';
 
 import { formatTs } from '../utils/formatTime';
@@ -71,6 +72,8 @@ export default function Summary() {
   const editedAfterSummary = useWizardStore((s) => s.editedAfterSummary);
   const clearEditedFlag = useWizardStore((s) => s.clearEditedAfterSummary);
   const session = useSessionStore((s) => s.session);
+  const editMode = useSessionStore((s) => s.editMode);
+  const apiBase = editMode === 'meeting' ? '/meetings' : '/sessions';
   const setSession = useSessionStore((s) => s.setSession);
 
   const [loading, setLoading] = useState(false);
@@ -143,13 +146,13 @@ export default function Summary() {
 
   const showToast = (message: string) => setToast({ message, visible: true });
 
-  // Save summary to server via dedicated APIs
+  // Save summary to server via dedicated APIs (editMode aware)
   const saveSummary = async (blocks: typeof summaryBlocks, items: ActionItem[]) => {
     if (!session) return;
     const md = rebuildMarkdown(titleLine, blocks);
     try {
-      await updateSummaryMarkdown(session.session_id, md);
-      await updateActionItems(session.session_id, items);
+      await api.patch(`${apiBase}/${session.session_id}/summary`, { summary_markdown: md });
+      await api.patch(`${apiBase}/${session.session_id}/action-items`, { action_items: items });
     } catch {}
   };
 
@@ -289,6 +292,17 @@ export default function Summary() {
     return null;
   };
 
+  if (!session) {
+    return (
+      <WizardLayout>
+        <div className="pt-20 text-center">
+          <p className="text-sm text-text-tertiary">세션 정보가 없습니다</p>
+          <button onClick={() => navigate('/')} className="mt-4 text-sm text-primary cursor-pointer">홈으로 돌아가기</button>
+        </div>
+      </WizardLayout>
+    );
+  }
+
   return (
     <WizardLayout
       prevRoute="/editing"
@@ -320,12 +334,16 @@ export default function Summary() {
           <div className="mt-12 bg-warning-bg rounded-xl p-5">
             <p className="text-[15px] text-warning-text font-medium">요약 생성 실패</p>
             <p className="text-sm text-warning-text/80 mt-1">{error}</p>
-            <button
-              onClick={generateSummary}
-              className="mt-4 px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
-            >
-              재시도
-            </button>
+            <div className="flex gap-2 mt-4">
+              <button onClick={generateSummary}
+                className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">
+                재시도
+              </button>
+              <button onClick={() => navigate('/send')}
+                className="px-4 py-2 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer">
+                요약 없이 전송으로 이동
+              </button>
+            </div>
           </div>
         )}
 

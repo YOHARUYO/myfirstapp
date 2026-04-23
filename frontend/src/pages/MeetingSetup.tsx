@@ -203,8 +203,12 @@ export default function MeetingSetup() {
         navigate('/recording');
       }
     } catch (err: any) {
-      const detail = err?.response?.data?.detail || '세션 생성에 실패했습니다';
-      setToast({ message: detail, visible: true });
+      if (err?.response?.status === 409) {
+        setToast({ message: '진행 중인 회의가 있습니다. 홈 화면에서 삭제하거나 이어서 진행해주세요.', visible: true });
+        navigate('/');
+      } else {
+        setToast({ message: err?.response?.data?.detail || '세션 생성에 실패했습니다', visible: true });
+      }
     } finally {
       setCreating(false);
     }

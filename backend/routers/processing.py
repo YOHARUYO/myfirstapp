@@ -6,8 +6,20 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException
 
-from config import SESSIONS_DIR, WHISPER_MODEL
+from config import SESSIONS_DIR, DATA_DIR, WHISPER_MODEL as DEFAULT_WHISPER_MODEL
 from models.session import Session
+
+
+def _get_whisper_model() -> str:
+    import json as _json
+    settings_path = DATA_DIR / "settings.json"
+    if settings_path.exists():
+        try:
+            s = _json.loads(settings_path.read_text(encoding="utf-8"))
+            return s.get("whisper", {}).get("model", DEFAULT_WHISPER_MODEL)
+        except Exception:
+            pass
+    return DEFAULT_WHISPER_MODEL
 from models.block import Block
 
 router = APIRouter(prefix="/api/sessions", tags=["processing"])
@@ -78,7 +90,7 @@ async def _run_processing(session_id: str):
 
         language = session.metadata.language or None
         segments = await asyncio.to_thread(
-            transcribe, audio_path, language, WHISPER_MODEL
+            transcribe, audio_path, language, _get_whisper_model()
         )
 
         _update_stage(session_id, "whisper", "completed", 1.0)

@@ -153,6 +153,17 @@ export default function Processing() {
   })();
 
   // Choice screen (realtime mode only)
+  if (!session) {
+    return (
+      <WizardLayout>
+        <div className="pt-20 text-center">
+          <p className="text-sm text-text-tertiary">세션 정보가 없습니다</p>
+          <button onClick={() => navigate('/')} className="mt-4 text-sm text-primary cursor-pointer">홈으로 돌아가기</button>
+        </div>
+      </WizardLayout>
+    );
+  }
+
   if (showChoice) {
     return (
       <WizardLayout prevRoute="/recording">

@@ -106,7 +106,7 @@ export default function Recording() {
 
   useEffect(() => {
     if (!session) {
-      navigate('/setup');
+      navigate('/', { replace: true });
     } else {
       setMetaTitle(session.metadata.title);
       setMetaParticipants(session.metadata.participants);
@@ -412,12 +412,16 @@ export default function Recording() {
       silentAudio.start();
       setRecordingState('recording');
     } catch (err: any) {
-      const message =
-        err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError'
-          ? '마이크를 찾을 수 없습니다. 마이크를 연결해주세요.'
-          : err?.name === 'NotAllowedError'
-          ? '마이크 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요.'
-          : `녹음 시작 실패: ${err?.message || '알 수 없는 오류'}`;
+      let message: string;
+      if (err?.message === 'WebSocket connection failed') {
+        message = '서버에 연결할 수 없습니다. 백엔드가 실행 중인지 확인해주세요.';
+      } else if (err?.name === 'NotFoundError' || err?.name === 'DevicesNotFoundError') {
+        message = '마이크를 찾을 수 없습니다. 마이크를 연결해주세요.';
+      } else if (err?.name === 'NotAllowedError') {
+        message = '마이크 권한이 거부되었습니다. 브라우저 설정에서 허용해주세요.';
+      } else {
+        message = `녹음 시작 실패: ${err?.message || '알 수 없는 오류'}`;
+      }
       setToast({ message, visible: true });
     }
   };

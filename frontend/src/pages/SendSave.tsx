@@ -21,6 +21,8 @@ export default function SendSave() {
   const navigate = useNavigate();
   const setStep = useWizardStore((s) => s.setStep);
   const session = useSessionStore((s) => s.session);
+  const editMode = useSessionStore((s) => s.editMode);
+  const apiBase = editMode === 'meeting' ? '/meetings' : '/sessions';
   const setSession = useSessionStore((s) => s.setSession);
 
   // Checkboxes
@@ -139,7 +141,7 @@ export default function SendSave() {
     if (saveMd) {
       setMdStatus('loading');
       try {
-        const res = await api.post(`/sessions/${session.session_id}/export-md`);
+        const res = await api.post(`${apiBase}/${session.session_id}/export-md`);
         setMdStatus('success');
         setMdResult(`${res.data.filename} 저장 완료`);
       } catch (e: any) {
@@ -169,7 +171,9 @@ export default function SendSave() {
 
     // 3. Complete session (JSON history)
     try {
-      await api.post(`/sessions/${session.session_id}/complete`);
+      if (editMode !== 'meeting') {
+        try { await api.post(`/sessions/${session.session_id}/complete`); } catch {}
+      }
     } catch {}
 
     setExecuting(false);
@@ -255,7 +259,7 @@ export default function SendSave() {
                   onClick={async () => {
                     setMdStatus('loading');
                     try {
-                      const res = await api.post(`/sessions/${session!.session_id}/export-md`);
+                      const res = await api.post(`${apiBase}/${session!.session_id}/export-md`);
                       setMdStatus('success');
                       setMdResult(`${res.data.filename} 저장 완료`);
                     } catch (e: any) {
