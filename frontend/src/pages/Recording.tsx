@@ -296,7 +296,11 @@ export default function Recording() {
       )
     );
     setPopoverBlockId(null);
-  }, []);
+    // 서버에 저장
+    if (session) {
+      api.patch(`/sessions/${session.session_id}/blocks/${blockId}/importance`, { importance }).catch(() => {});
+    }
+  }, [session]);
 
   // Keyboard: importance (1/2/3/4/0), navigation (↑/↓), Enter to edit
   useEffect(() => {
@@ -372,23 +376,36 @@ export default function Recording() {
   const handleSplit = useCallback(async (blockId: string, cursorPos: number) => {
     if (!session) return;
     try {
+      // 편집 중이면 현재 텍스트를 먼저 저장
+      if (editingBlockId === blockId && editingText !== editingOriginalText) {
+        await api.patch(`/sessions/${session.session_id}/blocks/${blockId}`, { text: editingText });
+      }
       await api.post(`/sessions/${session.session_id}/blocks/${blockId}/split`, { cursor_position: cursorPos });
       const updated = await getSession(session.session_id);
       setSession(updated);
       setBlocks(updated.blocks);
       setEditingBlockId(null);
+      setEditingText('');
+      setEditingOriginalText('');
     } catch {}
-  }, [session, setSession]);
+  }, [session, setSession, editingBlockId, editingText, editingOriginalText]);
 
   const handleMerge = useCallback(async (blockId: string, direction: 'prev' | 'next') => {
     if (!session) return;
     try {
+      // 편집 중이면 현재 텍스트를 먼저 저장
+      if (editingBlockId === blockId && editingText !== editingOriginalText) {
+        await api.patch(`/sessions/${session.session_id}/blocks/${blockId}`, { text: editingText });
+      }
       await api.post(`/sessions/${session.session_id}/blocks/${blockId}/merge`, { direction });
       const updated = await getSession(session.session_id);
       setSession(updated);
       setBlocks(updated.blocks);
+      setEditingBlockId(null);
+      setEditingText('');
+      setEditingOriginalText('');
     } catch {}
-  }, [session, setSession]);
+  }, [session, setSession, editingBlockId, editingText, editingOriginalText]);
 
   const handleEditCancel = useCallback(() => {
     setEditingBlockId(null);
@@ -659,6 +676,11 @@ export default function Recording() {
                       value={editingText}
                       onChange={(e) => { setEditingText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
                       onKeyDown={(e) => {
+                        // Ctrl+Home/End: textarea 내부에서 처리 (페이지 스크롤 방지)
+                        if ((e.ctrlKey || e.metaKey) && (e.key === 'Home' || e.key === 'End')) {
+                          e.stopPropagation();
+                          return;
+                        }
                         if (e.key === 'Enter' && e.shiftKey) return; // 줄바꿈
                         if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                           e.preventDefault();
@@ -686,7 +708,15 @@ export default function Recording() {
                     /* 더블클릭=편집 */
                     <p
                       className="flex-1 text-[15px] text-text leading-relaxed cursor-text select-text whitespace-pre-wrap"
-                      onDoubleClick={() => handleEditStart(block)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedBlockId(block.block_id);
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation();
+                        setFocusedBlockId(block.block_id);
+                        handleEditStart(block);
+                      }}
                     >
                       {block.text}
                     </p>

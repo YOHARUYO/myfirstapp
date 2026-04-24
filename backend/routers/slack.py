@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 
-from config import SESSIONS_DIR, MEETINGS_DIR, SLACK_BOT_TOKEN, EXPORT_DIR
+from config import SESSIONS_DIR, MEETINGS_DIR, SLACK_BOT_TOKEN, EXPORT_DIR, DATA_DIR
 from models.session import Session
 from models.meeting import Meeting
 
@@ -203,11 +203,18 @@ def _build_slack_message(session: Session, greeting: str = "", client=None) -> s
 
     fu_bullets = []
     for item in session.action_items:
-        assignee = item.get("assignee")
-        task = item.get("task", "")
+        # dict 또는 pydantic 모델 모두 지원
+        if isinstance(item, dict):
+            assignee = item.get("assignee")
+            task = item.get("task", "")
+            deadline = item.get("deadline")
+        else:
+            assignee = getattr(item, "assignee", None)
+            task = getattr(item, "task", "")
+            deadline = getattr(item, "deadline", None)
         line = f"• [@{assignee}] {task}" if assignee else f"• {task}"
-        if item.get("deadline"):
-            line += f" ~{item['deadline']}"
+        if deadline:
+            line += f" ~{deadline}"
         fu_bullets.append(line)
 
     parts = [header]
@@ -244,7 +251,6 @@ def _build_slack_message(session: Session, greeting: str = "", client=None) -> s
 def send_slack_message(req: SlackSendRequest):
     """Send meeting summary to Slack channel."""
     import json as _json
-    from config import DATA_DIR
 
     client = _get_slack_client()
     session = _load_session(req.session_id)

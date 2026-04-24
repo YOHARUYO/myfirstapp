@@ -10,7 +10,7 @@ import Toast from '../components/common/Toast';
 import Modal from '../components/common/Modal';
 import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { getSession, updateMetadata, retagBlocks } from '../api/sessions';
+import { updateMetadata } from '../api/sessions';
 import { listParticipants, listLocations } from '../api/contacts';
 import api from '../api/client';
 import type { Block, ImportanceLevel } from '../types';
@@ -92,7 +92,8 @@ export default function Editing() {
   // Load blocks from server on mount (ensures latest data from step 3)
   useEffect(() => {
     if (!session) return;
-    getSession(session.session_id).then((updated) => {
+    api.get(`${apiBase}/${session.session_id}`).then((res) => {
+      const updated = res.data;
       setSession(updated);
       setBlocks(updated.blocks);
       setMetaTitle(updated.metadata.title);
@@ -210,19 +211,25 @@ export default function Editing() {
     setCheatlineVisible(false);
   };
 
-  // Block split (Shift+Enter)
+  // Block split (Ctrl+Enter)
   const handleSplit = async (blockId: string, cursorPos: number) => {
     if (!session) return;
     pushUndo(blocks);
     try {
-      const res = await api.post(`${apiBase}/${session.session_id}/blocks/${blockId}/split`, {
+      // 편집 중이면 현재 텍스트를 먼저 저장
+      if (editingBlockId === blockId && editingText !== editingOriginalText) {
+        await api.patch(`${apiBase}/${session.session_id}/blocks/${blockId}`, { text: editingText });
+      }
+      await api.post(`${apiBase}/${session.session_id}/blocks/${blockId}/split`, {
         cursor_position: cursorPos,
       });
-      // Reload blocks
-      const updated = await getSession(session.session_id);
-      setSession(updated);
-      setBlocks(updated.blocks);
+      // apiBase 기반 리로드 (F4: meeting 모드 대응)
+      const res = await api.get(`${apiBase}/${session.session_id}`);
+      setSession(res.data);
+      setBlocks(res.data.blocks);
       setEditingBlockId(null);
+      setEditingText('');
+      setEditingOriginalText('');
       setCheatlineVisible(false);
     } catch {
       showToast('분할에 실패했습니다');
@@ -234,10 +241,18 @@ export default function Editing() {
     if (!session) return;
     pushUndo(blocks);
     try {
+      // 편집 중이면 현재 텍스트를 먼저 저장
+      if (editingBlockId && editingText !== editingOriginalText) {
+        await api.patch(`${apiBase}/${session.session_id}/blocks/${editingBlockId}`, { text: editingText });
+      }
       await api.post(`${apiBase}/${session.session_id}/blocks/${blockId}/merge`, { direction });
-      const updated = await getSession(session.session_id);
-      setSession(updated);
-      setBlocks(updated.blocks);
+      // apiBase 기반 리로드 (F4: meeting 모드 대응)
+      const res = await api.get(`${apiBase}/${session.session_id}`);
+      setSession(res.data);
+      setBlocks(res.data.blocks);
+      setEditingBlockId(null);
+      setEditingText('');
+      setEditingOriginalText('');
     } catch {
       showToast('병합에 실패했습니다');
     }
@@ -257,9 +272,9 @@ export default function Editing() {
       });
       const data = res.data;
       if (data.replaced_count > 0) {
-        const updated = await getSession(session.session_id);
-        setSession(updated);
-        setBlocks(updated.blocks);
+        const rr = await api.get(`${apiBase}/${session.session_id}`);
+        setSession(rr.data);
+        setBlocks(rr.data.blocks);
         showToast(`${data.replaced_count}건 치환 완료${data.skipped_locked_count > 0 ? ` (잠금 ${data.skipped_locked_count}건 건너뜀)` : ''}`);
       } else {
         showToast('일치하는 항목이 없습니다');
@@ -276,10 +291,10 @@ export default function Editing() {
     setRetagging(true);
     pushUndo(blocks);
     try {
-      const res = await retagBlocks(session.session_id);
-      const updated = await getSession(session.session_id);
-      setSession(updated);
-      setBlocks(updated.blocks);
+      const res = (await api.post(`${apiBase}/${session.session_id}/tag`)).data;
+      const rr = await api.get(`${apiBase}/${session.session_id}`);
+      setSession(rr.data);
+      setBlocks(rr.data.blocks);
       showToast(`${res.tagged_count}개 블록 태깅 완료`);
     } catch {
       showToast('AI 태깅에 실패했습니다');
@@ -646,6 +661,11 @@ export default function Editing() {
                     value={editingText}
                     onChange={(e) => { setEditingText(e.target.value); e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
                     onKeyDown={(e) => {
+                      // Ctrl+Home/End: textarea 내부에서 처리 (페이지 스크롤 방지)
+                      if ((e.ctrlKey || e.metaKey) && (e.key === 'Home' || e.key === 'End')) {
+                        e.stopPropagation();
+                        return;
+                      }
                       // Ctrl+Enter (Cmd+Enter): 블록 분할
                       if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
                         e.preventDefault();
@@ -686,7 +706,15 @@ export default function Editing() {
                 ) : (
                   <p
                     className="flex-1 text-[15px] text-text leading-relaxed cursor-text select-text whitespace-pre-wrap"
-                    onDoubleClick={() => handleEditStart(block)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setFocusedBlockId(block.block_id);
+                    }}
+                    onDoubleClick={(e) => {
+                      e.stopPropagation();
+                      setFocusedBlockId(block.block_id);
+                      handleEditStart(block);
+                    }}
                   >
                     {block.text}
                   </p>

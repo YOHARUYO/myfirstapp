@@ -9,7 +9,6 @@ import Toast from '../components/common/Toast';
 import Modal from '../components/common/Modal';
 import { useWizardStore } from '../stores/wizardStore';
 import { useSessionStore } from '../stores/sessionStore';
-import { summarizeSession, getSession } from '../api/sessions';
 import api from '../api/client';
 import type { ActionItem } from '../types';
 
@@ -108,8 +107,14 @@ export default function Summary() {
     setLoading(true);
     setError(null);
     try {
-      const result = await summarizeSession(session.session_id);
-      const updated = await getSession(session.session_id);
+      // meeting 모드: /meetings/{id}/resummarize, session 모드: /sessions/{id}/summarize
+      const summarizeUrl = editMode === 'meeting'
+        ? `${apiBase}/${session.session_id}/resummarize`
+        : `${apiBase}/${session.session_id}/summarize`;
+      const result = (await api.post(summarizeUrl)).data;
+
+      // apiBase 기반 리로드
+      const updated = (await api.get(`${apiBase}/${session.session_id}`)).data;
       setSession(updated);
 
       // Parse title line
@@ -122,7 +127,7 @@ export default function Summary() {
     } finally {
       setLoading(false);
     }
-  }, [session, setSession]);
+  }, [session, setSession, editMode, apiBase]);
 
   const loadExistingSummary = () => {
     if (!session) return;

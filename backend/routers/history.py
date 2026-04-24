@@ -206,8 +206,8 @@ def split_meeting_block(meeting_id: str, block_id: str, req: dict):
                 text=original_text[pos:].lstrip(),
                 source=block.source,
                 is_edited=block.is_edited,
-                importance=None,
-                importance_source=None,
+                importance=block.importance,
+                importance_source=block.importance_source,
                 speaker=None,
             )
 
@@ -249,8 +249,14 @@ def merge_meeting_block(meeting_id: str, block_id: str, req: dict):
     raise HTTPException(status_code=404, detail="Block not found")
 
 
+from pydantic import BaseModel as _BaseModel
+
+class ExportMdRequest(_BaseModel):
+    export_path: Optional[str] = None
+
+
 @router.post("/{meeting_id}/export-md")
-def export_meeting_md(meeting_id: str):
+def export_meeting_md(meeting_id: str, req: ExportMdRequest = ExportMdRequest()):
     """Generate and save .md file from completed meeting."""
     path = MEETINGS_DIR / f"{meeting_id}.json"
     if not path.exists():
@@ -288,11 +294,15 @@ def export_meeting_md(meeting_id: str):
     title_safe = re.sub(r'[<>:"/\\|?*]', '_', m.metadata.title or 'meeting')
     date_str = m.metadata.date or ''
     filename = f"{title_safe}_{date_str.replace('-', '')}.md"
-    export_path = EXPORT_DIR / filename
-    export_path.parent.mkdir(parents=True, exist_ok=True)
-    export_path.write_text(md_content, encoding="utf-8")
+    if req.export_path:
+        export_dir = Path(req.export_path)
+    else:
+        export_dir = EXPORT_DIR
+    export_file = export_dir / filename
+    export_file.parent.mkdir(parents=True, exist_ok=True)
+    export_file.write_text(md_content, encoding="utf-8")
 
-    return {"filename": filename}
+    return {"filename": filename, "content": md_content}
 
 
 @router.post("/{meeting_id}/resummarize")
@@ -337,6 +347,64 @@ def resummarize_meeting(meeting_id: str):
         "action_items": action_items,
         "keywords": keywords,
     }
+
+
+@router.post("/{meeting_id}/tag")
+def retag_meeting_blocks(meeting_id: str):
+    """Re-run AI tagging on meeting blocks."""
+    from services.claude_service import tag_blocks
+
+    path = MEETINGS_DIR / f"{meeting_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+
+    if not m.blocks:
+        raise HTTPException(status_code=400, detail="No blocks to tag")
+
+    tag_result = tag_blocks(
+        m.blocks, m.metadata.title, m.metadata.participants,
+    )
+
+    tagged_count = 0
+    for block in m.blocks:
+        if block.block_id in tag_result and block.importance_source != "user":
+            block.importance = tag_result[block.block_id]
+            block.importance_source = "ai"
+            tagged_count += 1
+
+    path.write_text(m.model_dump_json(indent=2), encoding="utf-8")
+
+    return {
+        "tagged_count": tagged_count,
+        "total_blocks": len(m.blocks),
+        "skipped_user_tags": sum(1 for b in m.blocks if b.importance_source == "user"),
+    }
+
+
+@router.patch("/{meeting_id}/summary")
+def update_meeting_summary(meeting_id: str, req: dict):
+    """Save edited summary markdown for a meeting (6단계 편집 확정 시)."""
+    path = MEETINGS_DIR / f"{meeting_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+    m.summary_markdown = req.get("summary_markdown", m.summary_markdown)
+    path.write_text(m.model_dump_json(indent=2), encoding="utf-8")
+    return {"ok": True}
+
+
+@router.patch("/{meeting_id}/action-items")
+def update_meeting_action_items(meeting_id: str, req: dict):
+    """Save edited action items for a meeting (6단계 편집 확정 시)."""
+    path = MEETINGS_DIR / f"{meeting_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+    if "action_items" in req:
+        m.action_items = req["action_items"]
+    path.write_text(m.model_dump_json(indent=2), encoding="utf-8")
+    return {"ok": True}
 
 
 @router.delete("/{meeting_id}")

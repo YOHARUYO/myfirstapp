@@ -81,7 +81,10 @@ export default function SendSave() {
         setChannels(chs);
         if (chs.length > 0) setSelectedChannel(chs[0].id);
       })
-      .catch(() => {})
+      .catch((err) => {
+        const detail = err?.response?.data?.detail || 'Slack 채널 목록을 불러올 수 없습니다';
+        showToast(detail);
+      })
       .finally(() => setChannelsLoading(false));
   }, []);
 
@@ -145,7 +148,7 @@ export default function SendSave() {
     if (saveMd) {
       setMdStatus('loading');
       try {
-        const res = await api.post(`${apiBase}/${session.session_id}/export-md`);
+        const res = await api.post(`${apiBase}/${session.session_id}/export-md`, { export_path: exportPath || undefined });
         setMdStatus('success');
         setMdResult(`${res.data.filename} 저장 완료`);
       } catch (e: any) {
@@ -271,7 +274,7 @@ export default function SendSave() {
                   onClick={async () => {
                     setMdStatus('loading');
                     try {
-                      const res = await api.post(`${apiBase}/${session!.session_id}/export-md`);
+                      const res = await api.post(`${apiBase}/${session!.session_id}/export-md`, { export_path: exportPath || undefined });
                       setMdStatus('success');
                       setMdResult(`${res.data.filename} 저장 완료`);
                     } catch (e: any) {
@@ -367,7 +370,7 @@ export default function SendSave() {
                         <option key={ch.id} value={ch.id}>#{ch.name}</option>
                       ))}
                     </select>
-                    <button onClick={() => { setChannelsLoading(true); listChannels().then((chs) => { setChannels(chs); showToast(`${chs.length}개 채널 로드됨`); }).catch(() => {}).finally(() => setChannelsLoading(false)); }}
+                    <button onClick={() => { setChannelsLoading(true); listChannels().then((chs) => { setChannels(chs); showToast(`${chs.length}개 채널 로드됨`); }).catch((err) => { const detail = err?.response?.data?.detail || '채널 목록을 불러올 수 없습니다'; showToast(detail); }).finally(() => setChannelsLoading(false)); }}
                       className="px-3 py-2 text-sm text-text-secondary bg-bg rounded-lg hover:bg-bg-hover cursor-pointer shrink-0" title="새로고침">
                       ↻
                     </button>

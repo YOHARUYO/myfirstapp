@@ -334,7 +334,17 @@ export default function HistoryDetail() {
           onClick={async () => {
             try {
               const res = await api.post(`/meetings/${meeting.meeting_id}/export-md`);
-              showToast(`${res.data.filename} 다운로드 준비 완료`);
+              // Blob 다운로드
+              const blob = new Blob([res.data.content], { type: 'text/markdown;charset=utf-8' });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = res.data.filename;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              showToast(`${res.data.filename} 다운로드 완료`);
             } catch { showToast('.md 생성에 실패했습니다'); }
           }}
           className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"

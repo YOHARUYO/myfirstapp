@@ -268,8 +268,12 @@ def _escape_md(text: str) -> str:
     return text
 
 
+class ExportMdRequest(BaseModel):
+    export_path: Optional[str] = None
+
+
 @router.post("/{session_id}/export-md")
-def export_md(session_id: str):
+def export_md(session_id: str, req: ExportMdRequest = ExportMdRequest()):
     """Generate and save .md file from session summary + transcript."""
     _validate_session_id(session_id)
     session = _load_session(session_id)
@@ -307,11 +311,15 @@ def export_md(session_id: str):
     title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
     date_str = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
     filename = f"{title_safe}_{date_str.replace('-', '')}.md"
-    export_path = EXPORT_DIR / filename
-    export_path.parent.mkdir(parents=True, exist_ok=True)
-    export_path.write_text(md_content, encoding="utf-8")
+    if req.export_path:
+        export_dir = Path(req.export_path)
+    else:
+        export_dir = EXPORT_DIR
+    export_file = export_dir / filename
+    export_file.parent.mkdir(parents=True, exist_ok=True)
+    export_file.write_text(md_content, encoding="utf-8")
 
-    return {"filename": filename}
+    return {"filename": filename, "content": md_content}
 
 
 @router.delete("/{session_id}")
@@ -387,8 +395,8 @@ def split_block(session_id: str, block_id: str, req: SplitBlockRequest):
                 text=text_after,
                 source=block.source,
                 is_edited=block.is_edited,
-                importance=None,
-                importance_source=None,
+                importance=block.importance,
+                importance_source=block.importance_source,
                 speaker=None,
             )
 
