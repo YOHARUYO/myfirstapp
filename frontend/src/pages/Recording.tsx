@@ -219,12 +219,26 @@ export default function Recording() {
     }
   }, [recordingState, webSpeech]));
 
-  // Auto-scroll (skip when editing)
+  // Auto-scroll (skip when editing or user scrolled up)
+  const [userScrolled, setUserScrolled] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
-    if (!editingBlockId) {
+    const container = containerRef.current;
+    if (!container) return;
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      setUserScrolled(scrollHeight - scrollTop - clientHeight > 100);
+    };
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  useEffect(() => {
+    if (!editingBlockId && !userScrolled) {
       transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
-  }, [blocks, interimText, editingBlockId]);
+  }, [blocks, interimText, editingBlockId, userScrolled]);
 
   // Focus textarea when editing starts
   useEffect(() => {
@@ -604,7 +618,7 @@ export default function Recording() {
         )}
 
         {/* 전사 영역 */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden mb-6 min-h-[300px]">
+        <div ref={containerRef} className="flex-1 overflow-y-auto overflow-x-hidden mb-6 min-h-[300px]">
           {blocks.length === 0 && !interimText && (
             <div className="flex items-center justify-center h-full">
               <p className="text-sm text-text-tertiary">

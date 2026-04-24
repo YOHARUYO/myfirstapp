@@ -421,7 +421,7 @@ export default function Settings() {
           <div className="bg-bg-subtle rounded-xl p-4">
             <p className="text-[15px] font-medium text-text">Whisper 모델</p>
             <select value={whisperModel} onChange={(e) => handleSaveWhisperModel(e.target.value)}
-              className="mt-2 w-full bg-bg rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer">
+              className="mt-2 w-full bg-bg rounded-lg px-3 py-2 pr-10 text-sm focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer">
               <option value="tiny">tiny (~1분, 낮음)</option>
               <option value="base">base (~2분, 보통)</option>
               <option value="small">small (~3분, 양호)</option>
@@ -522,7 +522,7 @@ export default function Settings() {
           <div>
             <label className="text-xs font-medium text-text-secondary block mb-1">언어</label>
             <select value={tplLanguage} onChange={(e) => setTplLanguage(e.target.value)}
-              className="w-full bg-bg-subtle rounded-lg px-4 py-2 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer">
+              className="w-full bg-bg-subtle rounded-lg px-4 py-2 pr-10 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer">
               <option value="ko-KR">한국어</option>
               <option value="en-US">English</option>
               <option value="ja-JP">日本語</option>
@@ -530,11 +530,21 @@ export default function Settings() {
           </div>
           <div>
             <label className="text-xs font-medium text-text-secondary block mb-1">Slack 채널</label>
-            <select value={tplSlackChannel} onChange={(e) => setTplSlackChannel(e.target.value)}
-              className="w-full bg-bg-subtle rounded-lg px-4 py-2 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer">
-              <option value="">선택 안 함</option>
-              {tplChannels.map((ch) => <option key={ch.id} value={ch.id}>#{ch.name}</option>)}
-            </select>
+            <div className="flex items-center gap-2">
+              <select value={tplSlackChannel} onChange={(e) => setTplSlackChannel(e.target.value)}
+                className="flex-1 bg-bg-subtle rounded-lg px-4 py-2 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer pr-10">
+                <option value="">선택 안 함</option>
+                {tplChannels.map((ch) => <option key={ch.id} value={ch.id}>#{ch.name}</option>)}
+              </select>
+              <button
+                type="button"
+                onClick={() => listChannels().then(setTplChannels).catch(() => {})}
+                className="p-2 text-text-secondary hover:text-primary rounded-lg hover:bg-bg-hover cursor-pointer shrink-0"
+                title="채널 목록 새로고침"
+              >
+                ↻
+              </button>
+            </div>
           </div>
         </div>
         <div className="flex gap-2 justify-end mt-6">

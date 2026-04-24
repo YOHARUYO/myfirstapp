@@ -85,6 +85,24 @@ class UpdateSettingsRequest(BaseModel):
     mic_sensitivity: Optional[float] = None
 
 
+def _sync_env(key: str, value: str):
+    """Update a key in backend/.env file."""
+    from pathlib import Path
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    if not env_path.exists():
+        return
+    lines = env_path.read_text(encoding="utf-8").splitlines()
+    updated = False
+    for i, line in enumerate(lines):
+        if line.startswith(f"{key}="):
+            lines[i] = f"{key}={value}"
+            updated = True
+            break
+    if not updated:
+        lines.append(f"{key}={value}")
+    env_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
 @router.patch("")
 def update_settings(req: UpdateSettingsRequest):
     settings = _load_settings()
@@ -104,4 +122,11 @@ def update_settings(req: UpdateSettingsRequest):
         setattr(settings, key, value)
 
     _save_settings(settings)
+
+    # .env 동기화 (마스킹된 값은 제외)
+    if req.slack and req.slack.bot_token and "..." not in req.slack.bot_token:
+        _sync_env("SLACK_BOT_TOKEN", req.slack.bot_token)
+    if req.claude and req.claude.api_key and "..." not in req.claude.api_key:
+        _sync_env("ANTHROPIC_API_KEY", req.claude.api_key)
+
     return _mask_response(settings)

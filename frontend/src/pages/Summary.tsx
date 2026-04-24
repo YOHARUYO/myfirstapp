@@ -14,6 +14,13 @@ import type { ActionItem } from '../types';
 
 import { formatTs } from '../utils/formatTime';
 
+function ensureSessionId(data: any, editMode: string) {
+  if (editMode === 'meeting' && data.meeting_id && !data.session_id) {
+    return { ...data, session_id: data.meeting_id };
+  }
+  return data;
+}
+
 /** Parse summary_markdown into editable blocks by ## / ### headings. */
 function parseSummaryBlocks(md: string): { id: string; heading: string; body: string }[] {
   if (!md || !md.trim()) return [];
@@ -114,7 +121,7 @@ export default function Summary() {
       const result = (await api.post(summarizeUrl)).data;
 
       // apiBase 기반 리로드
-      const updated = (await api.get(`${apiBase}/${session.session_id}`)).data;
+      const updated = ensureSessionId((await api.get(`${apiBase}/${session.session_id}`)).data, editMode);
       setSession(updated);
 
       // Parse title line

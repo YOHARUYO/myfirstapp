@@ -237,26 +237,30 @@ export default function SendSave() {
                   >
                     건너뛰기
                   </button>
-                  <button
-                    onClick={async () => {
-                      setSlackStatus('loading');
-                      try {
-                        const result = await sendSlackMessage(
-                          session!.session_id, selectedChannel,
-                          sendMode === 'thread' ? selectedThread : null, saveMd,
-                        );
-                        setSlackStatus('success');
-                        setSlackResult(`${result.channel_name} 전송 완료`);
-                        setSlackMessageTs(result.message_ts);
-                      } catch (e: any) {
-                        setSlackStatus('error');
-                        setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');
-                      }
-                    }}
-                    className="px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
-                  >
-                    재시도
-                  </button>
+                  {slackResult?.includes('token') || slackResult?.includes('not_authed') || slackResult?.includes('invalid_auth') ? (
+                    <span className="text-xs text-text-tertiary">설정에서 Slack 토큰을 확인해주세요</span>
+                  ) : (
+                    <button
+                      onClick={async () => {
+                        setSlackStatus('loading');
+                        try {
+                          const result = await sendSlackMessage(
+                            session!.session_id, selectedChannel,
+                            sendMode === 'thread' ? selectedThread : null, saveMd,
+                          );
+                          setSlackStatus('success');
+                          setSlackResult(`${result.channel_name} 전송 완료`);
+                          setSlackMessageTs(result.message_ts);
+                        } catch (e: any) {
+                          setSlackStatus('error');
+                          setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');
+                        }
+                      }}
+                      className="px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
+                    >
+                      재시도
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -270,22 +274,26 @@ export default function SendSave() {
               <div className="flex items-center gap-3 text-[15px] text-recording">
                 <AlertCircle size={16} className="shrink-0" />
                 {mdResult}
-                <button
-                  onClick={async () => {
-                    setMdStatus('loading');
-                    try {
-                      const res = await api.post(`${apiBase}/${session!.session_id}/export-md`, { export_path: exportPath || undefined });
-                      setMdStatus('success');
-                      setMdResult(`${res.data.filename} 저장 완료`);
-                    } catch (e: any) {
-                      setMdStatus('error');
-                      setMdResult(e?.response?.data?.detail || '.md 저장 실패');
-                    }
-                  }}
-                  className="ml-auto px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
-                >
-                  재시도
-                </button>
+                {mdResult?.toLowerCase().includes('summary') || mdResult?.toLowerCase().includes('no ') ? (
+                  <span className="ml-auto text-xs text-text-tertiary">요약을 먼저 생성해주세요</span>
+                ) : (
+                  <button
+                    onClick={async () => {
+                      setMdStatus('loading');
+                      try {
+                        const res = await api.post(`${apiBase}/${session!.session_id}/export-md`, { export_path: exportPath || undefined });
+                        setMdStatus('success');
+                        setMdResult(`${res.data.filename} 저장 완료`);
+                      } catch (e: any) {
+                        setMdStatus('error');
+                        setMdResult(e?.response?.data?.detail || '.md 저장 실패');
+                      }
+                    }}
+                    className="ml-auto px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
+                  >
+                    재시도
+                  </button>
+                )}
               </div>
             )}
             <div className="flex items-center gap-3 text-[15px] text-text">
@@ -321,13 +329,15 @@ export default function SendSave() {
       nextSlot={
         <button
           onClick={handleExecute}
-          disabled={executing || (!sendSlack && !saveMd)}
+          disabled={executing}
           className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-bg bg-primary rounded-lg hover:bg-primary-hover transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
         >
           {executing ? (
             <><Loader2 size={20} className="animate-spin" /> 실행 중...</>
           ) : (
-            <><Send size={20} /> 실행</>
+            !sendSlack && !saveMd
+              ? <><Check size={20} /> 완료</>
+              : <><Send size={20} /> 실행</>
           )}
         </button>
       }
@@ -364,7 +374,7 @@ export default function SendSave() {
                     <select
                       value={selectedChannel}
                       onChange={(e) => setSelectedChannel(e.target.value)}
-                      className="flex-1 bg-bg-subtle rounded-lg px-4 py-3 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+                      className="flex-1 bg-bg-subtle rounded-lg px-4 py-3 pr-10 text-[15px] focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
                     >
                       {channels.map((ch) => (
                         <option key={ch.id} value={ch.id}>#{ch.name}</option>

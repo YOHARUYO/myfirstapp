@@ -247,7 +247,7 @@ export default function MeetingSetup() {
                 ? handleTemplateSelect(e.target.value)
                 : (setTemplateId(null), setFilledFields(new Set()))
             }
-            className={`${inputBaseClass} cursor-pointer`}
+            className={`${inputBaseClass} pr-10 cursor-pointer`}
           >
             <option value="">선택 안 함</option>
             {templates.map((t) => (
@@ -316,7 +316,7 @@ export default function MeetingSetup() {
           <select
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
-            className={`${inputBaseClass} cursor-pointer`}
+            className={`${inputBaseClass} pr-10 cursor-pointer`}
           >
             {LANGUAGES.map((l) => (
               <option key={l.value} value={l.value}>

@@ -32,6 +32,13 @@ const IMPORTANCE_OPTIONS: { level: ImportanceLevel | null; color: string; label:
 
 import { formatTs } from '../utils/formatTime';
 
+function ensureSessionId(data: any, editMode: string) {
+  if (editMode === 'meeting' && data.meeting_id && !data.session_id) {
+    return { ...data, session_id: data.meeting_id };
+  }
+  return data;
+}
+
 export default function Editing() {
   const navigate = useNavigate();
   const setStep = useWizardStore((s) => s.setStep);
@@ -93,7 +100,7 @@ export default function Editing() {
   useEffect(() => {
     if (!session) return;
     api.get(`${apiBase}/${session.session_id}`).then((res) => {
-      const updated = res.data;
+      const updated = ensureSessionId(res.data, editMode);
       setSession(updated);
       setBlocks(updated.blocks);
       setMetaTitle(updated.metadata.title);
@@ -225,8 +232,9 @@ export default function Editing() {
       });
       // apiBase 기반 리로드 (F4: meeting 모드 대응)
       const res = await api.get(`${apiBase}/${session.session_id}`);
-      setSession(res.data);
-      setBlocks(res.data.blocks);
+      const reloaded = ensureSessionId(res.data, editMode);
+      setSession(reloaded);
+      setBlocks(reloaded.blocks);
       setEditingBlockId(null);
       setEditingText('');
       setEditingOriginalText('');
@@ -248,8 +256,9 @@ export default function Editing() {
       await api.post(`${apiBase}/${session.session_id}/blocks/${blockId}/merge`, { direction });
       // apiBase 기반 리로드 (F4: meeting 모드 대응)
       const res = await api.get(`${apiBase}/${session.session_id}`);
-      setSession(res.data);
-      setBlocks(res.data.blocks);
+      const reloaded = ensureSessionId(res.data, editMode);
+      setSession(reloaded);
+      setBlocks(reloaded.blocks);
       setEditingBlockId(null);
       setEditingText('');
       setEditingOriginalText('');
@@ -273,8 +282,9 @@ export default function Editing() {
       const data = res.data;
       if (data.replaced_count > 0) {
         const rr = await api.get(`${apiBase}/${session.session_id}`);
-        setSession(rr.data);
-        setBlocks(rr.data.blocks);
+        const reloaded = ensureSessionId(rr.data, editMode);
+        setSession(reloaded);
+        setBlocks(reloaded.blocks);
         showToast(`${data.replaced_count}건 치환 완료${data.skipped_locked_count > 0 ? ` (잠금 ${data.skipped_locked_count}건 건너뜀)` : ''}`);
       } else {
         showToast('일치하는 항목이 없습니다');
@@ -293,8 +303,9 @@ export default function Editing() {
     try {
       const res = (await api.post(`${apiBase}/${session.session_id}/tag`)).data;
       const rr = await api.get(`${apiBase}/${session.session_id}`);
-      setSession(rr.data);
-      setBlocks(rr.data.blocks);
+      const reloaded = ensureSessionId(rr.data, editMode);
+      setSession(reloaded);
+      setBlocks(reloaded.blocks);
       showToast(`${res.tagged_count}개 블록 태깅 완료`);
     } catch {
       showToast('AI 태깅에 실패했습니다');

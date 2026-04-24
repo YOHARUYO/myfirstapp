@@ -61,10 +61,12 @@ async def create_template(req: CreateTemplateRequest):
     async with _templates_lock:
         templates = _load_templates()
         now = datetime.now().isoformat()
+        max_order = max((t.order for t in templates), default=-1)
         tpl = Template(
             template_id=f"tpl_{uuid4().hex[:12]}",
             name=req.name,
             defaults=req.defaults,
+            order=max_order + 1,
             created_at=now,
             updated_at=now,
         )
