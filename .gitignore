@@ -1,6 +1,7 @@
 .env
 backend/.env
 backend/data/
+backend/results/
 node_modules/
 __pycache__/
 *.pyc
