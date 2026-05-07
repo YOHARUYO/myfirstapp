@@ -52,3 +52,48 @@ def get_uploaded_audio(chunks_dir: Path) -> Optional[Path]:
         if candidate.exists():
             return candidate
     return None
+
+
+def resolve_or_build_audio(session_dir: Path) -> Optional[Path]:
+    """Resolve or lazily build a single audio file for a session directory.
+
+    Order:
+    1) session_dir/merged_audio.webm (already merged by processing pipeline)
+    2) chunks/uploaded.* (upload mode)
+    3) chunks/chunk_*.webm → concat into session_dir/merged_audio.webm
+    Returns None if no source audio is available.
+    """
+    merged = session_dir / "merged_audio.webm"
+    if merged.exists():
+        return merged
+    chunks_dir = session_dir / "chunks"
+    if not chunks_dir.exists():
+        return None
+    uploaded = get_uploaded_audio(chunks_dir)
+    if uploaded:
+        return uploaded
+    chunks = sorted(chunks_dir.glob("chunk_*.webm"))
+    if not chunks:
+        return None
+    try:
+        return merge_audio_chunks(chunks_dir, merged)
+    except Exception:
+        return None
+
+
+def convert_to_mp3(src: Path, dst: Path) -> Path:
+    """Transcode any audio source to mp3 (libmp3lame, 192kbps)."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        [
+            "ffmpeg", "-y",
+            "-i", str(src),
+            "-vn",
+            "-c:a", "libmp3lame",
+            "-b:a", "192k",
+            str(dst),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    return dst

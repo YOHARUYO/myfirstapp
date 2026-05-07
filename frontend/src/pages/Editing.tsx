@@ -618,7 +618,7 @@ export default function Editing() {
             return (
               <div
                 key={block.block_id}
-                className={`group relative flex items-start gap-1.5 py-2 rounded-lg px-3 -mx-3 transition-colors ${
+                className={`group relative flex items-start gap-1.5 py-2 rounded-lg pl-3 pr-4 -mx-3 transition-colors ${
                   isFocused ? 'bg-bg-subtle' : 'hover:bg-bg-subtle'
                 }`}
                 onClick={() => setFocusedBlockId(block.block_id)}

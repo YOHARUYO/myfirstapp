@@ -28,6 +28,8 @@ export default function SendSave() {
   // Checkboxes
   const [sendSlack, setSendSlack] = useState(true);
   const [saveMd, setSaveMd] = useState(true);
+  const [saveAudio, setSaveAudio] = useState(false);
+  const [audioFormat, setAudioFormat] = useState<'webm' | 'mp3'>('webm');
   const [exportPath, setExportPath] = useState('');
 
   // Slack options
@@ -46,8 +48,10 @@ export default function SendSave() {
   const [executing, setExecuting] = useState(false);
   const [slackStatus, setSlackStatus] = useState<TaskStatus>('idle');
   const [mdStatus, setMdStatus] = useState<TaskStatus>('idle');
+  const [audioStatus, setAudioStatus] = useState<TaskStatus>('idle');
   const [slackResult, setSlackResult] = useState<string>('');
   const [mdResult, setMdResult] = useState<string>('');
+  const [audioResult, setAudioResult] = useState<string>('');
   const [completed, setCompleted] = useState(false);
 
   // Slack delete
@@ -157,7 +161,33 @@ export default function SendSave() {
       }
     }
 
+    // 1.5 녹음 파일 저장 (Slack 전송 전)
+    if (saveAudio) {
+      setAudioStatus('loading');
+      try {
+        const res = await api.post(`${apiBase}/${session.session_id}/export-audio`, {
+          export_path: exportPath || undefined,
+          format: audioFormat,
+        });
+        setAudioStatus('success');
+        const fileName = String(res.data.file_path).split(/[\\/]/).pop() || `녹음.${audioFormat}`;
+        setAudioResult(`${fileName} 저장 완료`);
+      } catch (e: any) {
+        setAudioStatus('error');
+        setAudioResult(e?.response?.data?.detail || '녹음 파일 저장 실패');
+      }
+    }
+
     // 2. Slack 전송 (이제 .md 파일이 존재)
+    let slackSentPayload: {
+      channel_id: string;
+      channel_name: string;
+      thread_ts: string | null;
+      message_ts: string;
+      sent_at: string;
+      deleted: boolean;
+      deleted_at: string | null;
+    } | null = null;
     if (sendSlack && selectedChannel) {
       setSlackStatus('loading');
       try {
@@ -170,6 +200,15 @@ export default function SendSave() {
         setSlackStatus('success');
         setSlackResult(`${result.channel_name} 전송 완료`);
         setSlackMessageTs(result.message_ts);
+        slackSentPayload = {
+          channel_id: selectedChannel,
+          channel_name: result.channel_name,
+          thread_ts: result.thread_ts,
+          message_ts: result.message_ts,
+          sent_at: new Date().toISOString(),
+          deleted: false,
+          deleted_at: null,
+        };
         if (saveMd && result.md_attached === false) {
           showToast('.md 파일을 찾을 수 없어 첨부 없이 전송되었습니다. 저장 경로 설정을 확인해주세요.');
         }
@@ -179,10 +218,13 @@ export default function SendSave() {
       }
     }
 
-    // 3. Complete session (JSON history)
+    // 3. Complete session (JSON history) — Slack 응답 전달로 #전송됨 태그 누락 해결
     try {
       if (editMode !== 'meeting') {
-        try { await api.post(`/sessions/${session.session_id}/complete`); } catch {}
+        try {
+          const body = slackSentPayload ? { slack_sent: slackSentPayload } : {};
+          await api.post(`/sessions/${session.session_id}/complete`, body);
+        } catch {}
       }
     } catch {}
 
@@ -270,6 +312,38 @@ export default function SendSave() {
                 </div>
               </div>
             )}
+            {audioStatus === 'success' && (
+              <div className="flex items-center gap-3 text-[15px] text-text">
+                <Check size={16} className="text-success shrink-0" />
+                {audioResult}
+              </div>
+            )}
+            {audioStatus === 'error' && (
+              <div className="flex items-center gap-3 text-[15px] text-recording">
+                <AlertCircle size={16} className="shrink-0" />
+                녹음: {audioResult}
+                <button
+                  onClick={async () => {
+                    setAudioStatus('loading');
+                    try {
+                      const res = await api.post(`${apiBase}/${session!.session_id}/export-audio`, {
+                        export_path: exportPath || undefined,
+                        format: audioFormat,
+                      });
+                      setAudioStatus('success');
+                      const fileName = String(res.data.file_path).split(/[\\/]/).pop() || `녹음.${audioFormat}`;
+                      setAudioResult(`${fileName} 저장 완료`);
+                    } catch (e: any) {
+                      setAudioStatus('error');
+                      setAudioResult(e?.response?.data?.detail || '녹음 파일 저장 실패');
+                    }
+                  }}
+                  className="ml-auto px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
+                >
+                  재시도
+                </button>
+              </div>
+            )}
             {mdStatus === 'success' && (
               <div className="flex items-center gap-3 text-[15px] text-text">
                 <Check size={16} className="text-success shrink-0" />
@@ -341,7 +415,7 @@ export default function SendSave() {
           {executing ? (
             <><Loader2 size={20} className="animate-spin" /> 실행 중...</>
           ) : (
-            !sendSlack && !saveMd
+            !sendSlack && !saveMd && !saveAudio
               ? <><Check size={20} /> 완료</>
               : <><Send size={20} /> 실행</>
           )}
@@ -529,6 +603,46 @@ export default function SendSave() {
                   폴더 선택
                 </button>
               </div>
+            </div>
+          )}
+        </div>
+
+        {/* 녹음 파일 저장 section */}
+        <div className="mt-8 bg-bg-subtle rounded-xl p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <input
+              type="checkbox"
+              checked={saveAudio}
+              onChange={(e) => setSaveAudio(e.target.checked)}
+              className="w-4 h-4 rounded cursor-pointer"
+            />
+            <h2 className="text-[28px] font-bold text-text">녹음 파일 저장</h2>
+            {saveAudio && (
+              <div className="ml-auto flex gap-1 bg-bg rounded-lg p-1">
+                <button
+                  onClick={() => setAudioFormat('webm')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                    audioFormat === 'webm' ? 'bg-primary text-bg' : 'text-text-secondary hover:text-text'
+                  }`}
+                >
+                  .webm
+                </button>
+                <button
+                  onClick={() => setAudioFormat('mp3')}
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                    audioFormat === 'mp3' ? 'bg-primary text-bg' : 'text-text-secondary hover:text-text'
+                  }`}
+                >
+                  .mp3
+                </button>
+              </div>
+            )}
+          </div>
+          {saveAudio && (
+            <div className="ml-7 mt-2">
+              <p className="text-sm text-text-secondary">
+                .md 파일과 같은 폴더에 저장됩니다 ({audioFormat === 'mp3' ? 'ffmpeg 변환' : '원본'})
+              </p>
             </div>
           )}
         </div>

@@ -11,7 +11,7 @@ from pydantic import BaseModel, Field
 from config import SESSIONS_DIR, MEETINGS_DIR, EXPORT_DIR
 from models.session import Session
 from models.base import MeetingMetadata
-from models.meeting import Meeting
+from models.meeting import Meeting, SlackSentInfo
 from services.session_io import (
     load_session as _io_load_session,
     save_session as _save_session,
@@ -150,8 +150,12 @@ def resume_recording(session_id: str):
         return session.model_dump()
 
 
+class CompleteSessionRequest(BaseModel):
+    slack_sent: Optional[SlackSentInfo] = None
+
+
 @router.post("/{session_id}/complete")
-def complete_session(session_id: str):
+def complete_session(session_id: str, req: CompleteSessionRequest = CompleteSessionRequest()):
     _validate_session_id(session_id)
     with get_session_lock(session_id):
         session = _load_session(session_id)
@@ -176,6 +180,7 @@ def complete_session(session_id: str):
             summary_markdown=session.summary_markdown,
             action_items=session.action_items,
             keywords=session.keywords,
+            slack_sent=req.slack_sent,
         )
 
         meeting_path = MEETINGS_DIR / f"{meeting_id}.json"
@@ -343,6 +348,47 @@ def export_md(session_id: str, req: ExportMdRequest = ExportMdRequest()):
     export_file.write_text(md_content, encoding="utf-8")
 
     return {"filename": filename, "content": md_content}
+
+
+class ExportAudioRequest(BaseModel):
+    export_path: Optional[str] = None
+    format: str = "webm"
+
+
+@router.post("/{session_id}/export-audio")
+def export_session_audio(session_id: str, req: ExportAudioRequest):
+    """Save the session's recorded audio (.webm or .mp3) to a user folder.
+    Used by the 7단계 send/save flow before the meeting JSON exists."""
+    _validate_session_id(session_id)
+    if req.format not in ("webm", "mp3"):
+        raise HTTPException(status_code=400, detail="format must be 'webm' or 'mp3'")
+
+    session = _load_session(session_id)
+    from services.audio_service import resolve_or_build_audio, convert_to_mp3
+    import shutil as _shutil
+
+    session_dir = SESSIONS_DIR / session_id
+    audio_src = resolve_or_build_audio(session_dir)
+    if audio_src is None:
+        raise HTTPException(status_code=404, detail="녹음 파일을 찾을 수 없습니다")
+
+    title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
+    date_str = (session.metadata.date or '').replace('-', '')
+    filename = f"{title_safe}_{date_str}.{req.format}"
+
+    export_dir = Path(req.export_path) if req.export_path else EXPORT_DIR
+    export_dir.mkdir(parents=True, exist_ok=True)
+    dst = export_dir / filename
+
+    if req.format == "webm":
+        _shutil.copyfile(str(audio_src), str(dst))
+    else:
+        try:
+            convert_to_mp3(audio_src, dst)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"mp3 변환 실패: {e}")
+
+    return {"success": True, "file_path": str(dst)}
 
 
 @router.delete("/{session_id}")

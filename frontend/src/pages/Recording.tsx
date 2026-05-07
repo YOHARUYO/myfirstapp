@@ -689,7 +689,7 @@ export default function Recording() {
               return (
                 <div
                   key={block.block_id}
-                  className={`group flex items-start gap-1.5 py-2 rounded-lg px-3 -mx-3 transition-colors ${isFocused ? 'bg-bg-subtle' : 'hover:bg-bg-subtle'}`}
+                  className={`group flex items-start gap-1.5 py-2 rounded-lg pl-3 pr-4 -mx-3 transition-colors ${isFocused ? 'bg-bg-subtle' : 'hover:bg-bg-subtle'}`}
                   onClick={() => setFocusedBlockId(block.block_id)}
                 >
                   {/* 화자 슬롯 — MVP: 빈 원 */}

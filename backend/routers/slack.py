@@ -309,25 +309,27 @@ def send_slack_message(req: SlackSendRequest):
         channel_info = client.conversations_info(channel=req.channel_id)
         channel_name = channel_info.get("channel", {}).get("name", req.channel_id)
 
-        # Update Meeting JSON with slack_sent info
-        import json as _j2
-        from datetime import datetime as _dt2
-        meeting_path = MEETINGS_DIR / f"{req.session_id}.json"
-        if meeting_path.exists():
-            try:
-                m_data = _j2.loads(meeting_path.read_text(encoding="utf-8"))
-                m_data["slack_sent"] = {
-                    "channel_id": req.channel_id,
-                    "channel_name": f"#{channel_name}",
-                    "thread_ts": req.thread_ts,
-                    "message_ts": message_ts,
-                    "sent_at": _dt2.now().isoformat(),
-                    "deleted": False,
-                    "deleted_at": None,
-                }
-                meeting_path.write_text(_j2.dumps(m_data, indent=2, ensure_ascii=False), encoding="utf-8")
-            except Exception:
-                pass
+        # Update Meeting JSON with slack_sent info — 재전송 흐름(meeting_id로 호출)에서만 동작.
+        # 신규 작성 흐름은 sessions.py의 complete_session이 응답을 받아 Meeting 생성 시 포함하므로 여기서는 무동작.
+        if req.session_id.startswith("mtg_"):
+            import json as _j2
+            from datetime import datetime as _dt2
+            meeting_path = MEETINGS_DIR / f"{req.session_id}.json"
+            if meeting_path.exists():
+                try:
+                    m_data = _j2.loads(meeting_path.read_text(encoding="utf-8"))
+                    m_data["slack_sent"] = {
+                        "channel_id": req.channel_id,
+                        "channel_name": f"#{channel_name}",
+                        "thread_ts": req.thread_ts,
+                        "message_ts": message_ts,
+                        "sent_at": _dt2.now().isoformat(),
+                        "deleted": False,
+                        "deleted_at": None,
+                    }
+                    meeting_path.write_text(_j2.dumps(m_data, indent=2, ensure_ascii=False), encoding="utf-8")
+                except Exception:
+                    pass
 
         return {
             "success": True,

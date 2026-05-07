@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   ArrowLeft, ChevronDown, ChevronUp, Pencil, Send, Download,
-  Clock, Users, MapPin, Globe, Trash2,
+  Clock, Users, MapPin, Globe, Trash2, Music,
 } from 'lucide-react';
 import Modal from '../components/common/Modal';
 import Toast from '../components/common/Toast';
@@ -35,6 +35,9 @@ export default function HistoryDetail() {
   const [editMsgModal, setEditMsgModal] = useState(false);
   const [editMsgText, setEditMsgText] = useState('');
   const [deleteMeetingModal, setDeleteMeetingModal] = useState(false);
+  const [audioModalOpen, setAudioModalOpen] = useState(false);
+  const [audioFormat, setAudioFormat] = useState<'webm' | 'mp3'>('webm');
+  const [audioDownloading, setAudioDownloading] = useState(false);
   const [toast, setToast] = useState({ message: '', visible: false });
 
   useEffect(() => {
@@ -46,6 +49,42 @@ export default function HistoryDetail() {
   }, [meetingId]);
 
   const showToast = (msg: string) => setToast({ message: msg, visible: true });
+
+  const handleAudioDownload = async () => {
+    if (!meeting || audioDownloading) return;
+    setAudioDownloading(true);
+    try {
+      const res = await api.get(`/meetings/${meeting.meeting_id}/audio`, {
+        params: { format: audioFormat },
+        responseType: 'blob',
+      });
+      const blob = res.data as Blob;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const dispo = (res.headers['content-disposition'] as string) || '';
+      const utf8Match = dispo.match(/filename\*=UTF-8''([^;]+)/i);
+      const plainMatch = dispo.match(/filename="?([^";]+)"?/i);
+      const filename = utf8Match
+        ? decodeURIComponent(utf8Match[1])
+        : (plainMatch ? plainMatch[1] : `recording.${audioFormat}`);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setAudioModalOpen(false);
+      showToast(`${filename} 다운로드 완료`);
+    } catch (e: any) {
+      // blob responseType 에러는 detail 파싱 어려움 → 일반 메시지
+      const detail = (e?.response?.status === 404)
+        ? '녹음 파일을 찾을 수 없습니다'
+        : '녹음 다운로드에 실패했습니다';
+      showToast(detail);
+    } finally {
+      setAudioDownloading(false);
+    }
+  };
 
   const handleDeleteSlackMessage = async () => {
     if (!meeting?.slack_sent) return;
@@ -353,6 +392,13 @@ export default function HistoryDetail() {
           .md 다운로드
         </button>
         <button
+          onClick={() => setAudioModalOpen(true)}
+          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+        >
+          <Music size={18} />
+          녹음 다운로드
+        </button>
+        <button
           onClick={() => setDeleteMeetingModal(true)}
           className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-recording bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
         >
@@ -403,6 +449,48 @@ export default function HistoryDetail() {
             } catch { showToast('삭제에 실패했습니다'); }
             setDeleteMeetingModal(false);
           }} className="px-4 py-2 text-sm font-medium text-bg bg-recording rounded-lg hover:opacity-90 cursor-pointer">삭제</button>
+        </div>
+      </Modal>
+
+      {/* Audio download modal */}
+      <Modal open={audioModalOpen} onClose={() => audioDownloading ? undefined : setAudioModalOpen(false)}>
+        <h3 className="text-lg font-semibold text-text mb-2">녹음 파일 다운로드</h3>
+        <p className="text-sm text-text-secondary mb-4">형식을 선택해주세요. mp3는 변환에 시간이 걸릴 수 있습니다.</p>
+        <div className="space-y-2 mb-6">
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="audioFormat"
+              checked={audioFormat === 'webm'}
+              onChange={() => setAudioFormat('webm')}
+            />
+            <span className="text-sm text-text">.webm <span className="text-text-tertiary">(원본 — 빠름)</span></span>
+          </label>
+          <label className="flex items-center gap-3 cursor-pointer">
+            <input
+              type="radio"
+              name="audioFormat"
+              checked={audioFormat === 'mp3'}
+              onChange={() => setAudioFormat('mp3')}
+            />
+            <span className="text-sm text-text">.mp3 <span className="text-text-tertiary">(변환 — 호환성 ↑)</span></span>
+          </label>
+        </div>
+        <div className="flex gap-2 justify-end">
+          <button
+            onClick={() => setAudioModalOpen(false)}
+            disabled={audioDownloading}
+            className="px-4 py-2 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            취소
+          </button>
+          <button
+            onClick={handleAudioDownload}
+            disabled={audioDownloading}
+            className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {audioDownloading ? '다운로드 중...' : '다운로드'}
+          </button>
         </div>
       </Modal>
 

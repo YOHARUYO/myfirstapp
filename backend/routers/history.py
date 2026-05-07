@@ -1,10 +1,14 @@
 import re
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
+from starlette.background import BackgroundTask
 
-from config import MEETINGS_DIR, EXPORT_DIR, DATA_DIR
+from config import MEETINGS_DIR, EXPORT_DIR, DATA_DIR, SESSIONS_DIR
 from models.meeting import Meeting
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -253,6 +257,109 @@ from pydantic import BaseModel as _BaseModel
 
 class ExportMdRequest(_BaseModel):
     export_path: Optional[str] = None
+
+
+def _resolve_meeting_audio(m: Meeting) -> Optional[Path]:
+    """Find or lazily build audio source for a Meeting.
+
+    1) Meeting.merged_audio_path (recorded explicitly)
+    2) Derived session_dir's merged_audio.webm or chunks
+    """
+    if m.merged_audio_path:
+        p = Path(m.merged_audio_path)
+        if p.exists():
+            return p
+    session_id = m.meeting_id.replace("mtg_", "session_")
+    session_dir = SESSIONS_DIR / session_id
+    if not session_dir.exists():
+        return None
+    from services.audio_service import resolve_or_build_audio
+    return resolve_or_build_audio(session_dir)
+
+
+def _audio_filename(m: Meeting, fmt: str) -> str:
+    title_safe = re.sub(r'[<>:"/\\|?*]', '_', m.metadata.title or 'meeting')
+    date_str = (m.metadata.date or '').replace('-', '')
+    return f"{title_safe}_{date_str}.{fmt}"
+
+
+@router.get("/{meeting_id}/audio")
+def download_meeting_audio(meeting_id: str, format: str = Query("webm")):
+    """Download recorded audio for a meeting. format=webm streams the source as-is;
+    format=mp3 transcodes via ffmpeg on demand (no caching)."""
+    if format not in ("webm", "mp3"):
+        raise HTTPException(status_code=400, detail="format must be 'webm' or 'mp3'")
+
+    path = MEETINGS_DIR / f"{meeting_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+
+    audio_src = _resolve_meeting_audio(m)
+    if audio_src is None:
+        raise HTTPException(status_code=404, detail="녹음 파일을 찾을 수 없습니다")
+
+    filename = _audio_filename(m, format)
+
+    if format == "webm":
+        return FileResponse(
+            str(audio_src),
+            media_type="audio/webm",
+            filename=filename,
+        )
+
+    from services.audio_service import convert_to_mp3
+    tmp_dir = Path(tempfile.mkdtemp(prefix="meeting_audio_"))
+    tmp_path = tmp_dir / filename
+    try:
+        convert_to_mp3(audio_src, tmp_path)
+    except Exception as e:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        raise HTTPException(status_code=500, detail=f"mp3 변환 실패: {e}")
+
+    return FileResponse(
+        str(tmp_path),
+        media_type="audio/mpeg",
+        filename=filename,
+        background=BackgroundTask(shutil.rmtree, str(tmp_dir), ignore_errors=True),
+    )
+
+
+class ExportAudioRequest(_BaseModel):
+    export_path: Optional[str] = None
+    format: str = "webm"
+
+
+@router.post("/{meeting_id}/export-audio")
+def export_meeting_audio(meeting_id: str, req: ExportAudioRequest):
+    """Save the meeting's recorded audio (.webm or .mp3) to a user folder."""
+    if req.format not in ("webm", "mp3"):
+        raise HTTPException(status_code=400, detail="format must be 'webm' or 'mp3'")
+
+    path = MEETINGS_DIR / f"{meeting_id}.json"
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Meeting not found")
+    m = Meeting.model_validate_json(path.read_text(encoding="utf-8"))
+
+    audio_src = _resolve_meeting_audio(m)
+    if audio_src is None:
+        raise HTTPException(status_code=404, detail="녹음 파일을 찾을 수 없습니다")
+
+    filename = _audio_filename(m, req.format)
+    export_dir = Path(req.export_path) if req.export_path else EXPORT_DIR
+    export_dir.mkdir(parents=True, exist_ok=True)
+    dst = export_dir / filename
+
+    if req.format == "webm":
+        shutil.copyfile(str(audio_src), str(dst))
+    else:
+        from services.audio_service import convert_to_mp3
+        try:
+            convert_to_mp3(audio_src, dst)
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"mp3 변환 실패: {e}")
+
+    return {"success": True, "file_path": str(dst)}
 
 
 @router.post("/{meeting_id}/export-md")
