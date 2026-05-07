@@ -312,7 +312,9 @@ export default function Recording() {
     setPopoverBlockId(null);
     // 서버에 저장
     if (session) {
-      api.patch(`/sessions/${session.session_id}/blocks/${blockId}/importance`, { importance }).catch(() => {});
+      api.patch(`/sessions/${session.session_id}/blocks/${blockId}/importance`, { importance }).catch(() => {
+        setToast({ message: '중요도 저장에 실패했습니다. 다시 시도해주세요.', visible: true });
+      });
     }
   }, [session]);
 
@@ -380,7 +382,9 @@ export default function Recording() {
     if (textChanged && session) {
       try {
         await api.patch(`/sessions/${session.session_id}/blocks/${editingBlockId}`, { text: editingText });
-      } catch {}
+      } catch {
+        setToast({ message: '블록 저장에 실패했습니다. 다시 시도해주세요.', visible: true });
+      }
     }
     setEditingBlockId(null);
     setEditingText('');
@@ -401,7 +405,9 @@ export default function Recording() {
       setEditingBlockId(null);
       setEditingText('');
       setEditingOriginalText('');
-    } catch {}
+    } catch {
+      setToast({ message: '블록 분할에 실패했습니다.', visible: true });
+    }
   }, [session, setSession, editingBlockId, editingText, editingOriginalText]);
 
   const handleMerge = useCallback(async (blockId: string, direction: 'prev' | 'next') => {
@@ -418,7 +424,9 @@ export default function Recording() {
       setEditingBlockId(null);
       setEditingText('');
       setEditingOriginalText('');
-    } catch {}
+    } catch {
+      setToast({ message: '블록 병합에 실패했습니다.', visible: true });
+    }
   }, [session, setSession, editingBlockId, editingText, editingOriginalText]);
 
   const handleEditCancel = useCallback(() => {
@@ -497,6 +505,42 @@ export default function Recording() {
       await handleStopRecording();
     }
     audioStream.disconnect();
+
+    // 서버에 저장된 블록 수 확인
+    if (session) {
+      try {
+        const serverSession = await getSession(session.session_id);
+        const serverCount = serverSession.blocks.length;
+        const localCount = blocks.length;
+        if (serverCount < localCount) {
+          setToast({
+            message: `블록 ${localCount - serverCount}개가 서버에 미저장 상태입니다. 저장 중...`,
+            visible: true,
+          });
+          try {
+            await api.put(`/sessions/${session.session_id}/blocks`, {
+              blocks: blocks.map((b) => ({
+                block_id: b.block_id,
+                timestamp_start: b.timestamp_start,
+                timestamp_end: b.timestamp_end,
+                text: b.text,
+                source: b.source,
+                is_edited: b.is_edited,
+                importance: b.importance,
+                importance_source: b.importance_source,
+                speaker: b.speaker,
+              })),
+            });
+          } catch {
+            setToast({ message: '블록 저장 실패. 다시 시도해주세요.', visible: true });
+            return;
+          }
+        }
+      } catch {
+        setToast({ message: '서버 상태 확인에 실패했습니다. 데이터가 불완전할 수 있습니다.', visible: true });
+      }
+    }
+
     navigate('/processing');
   };
 

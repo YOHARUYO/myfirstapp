@@ -2,7 +2,7 @@ import json
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import Optional, List
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
@@ -266,6 +266,21 @@ def _escape_md(text: str) -> str:
     for ch in ['<', '>', '&']:
         text = text.replace(ch, f'\\{ch}')
     return text
+
+
+class BulkBlocksRequest(BaseModel):
+    blocks: List[dict]
+
+
+@router.put("/{session_id}/blocks")
+def replace_all_blocks(session_id: str, req: BulkBlocksRequest):
+    """Replace all blocks in a session (for sync recovery)."""
+    _validate_session_id(session_id)
+    from models.block import Block
+    session = _load_session(session_id)
+    session.blocks = [Block.model_validate(b) for b in req.blocks]
+    _save_session(session)
+    return {"ok": True, "block_count": len(session.blocks)}
 
 
 class ExportMdRequest(BaseModel):

@@ -168,14 +168,14 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ---
 
-## 8. 현재 구현 완료 항목 (2026-04-23 기준)
+## 8. 현재 구현 완료 항목 (2026-05-07 기준)
 
-> **마지막 업데이트**: 2026-04-23 개발 세션 종료 시점
-> **최신 커밋**: `aa868a6`
+> **마지막 업데이트**: 2026-05-07 개발 세션 종료 시점
+> **최신 커밋**: `b550e97` + 미커밋 4건 (04-27 장시간 녹음 안정성)
 
-### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 반영 완료
+### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성
 
-모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 코드 정리까지 마무리된 상태.
+모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성까지 마무리된 상태.
 
 ### 1단계 홈 (~98%)
 - 복구 카드형 배너 (status별 라우팅 + "이어서 진행" + "삭제하고 새로 시작")
@@ -187,17 +187,21 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 입력 소스 세그먼트 (실시간/업로드), 파일 드롭존
 - 하단 네비 바 (WizardLayout nextSlot)
 
-### 3단계 녹음 (~97%)
+### 3단계 녹음 (~98%)
 - Web Speech 안정화: onerror 분기, no-speech 지수 backoff, instanceIdRef, onStatusChange 콜백
+- interim 루프 최적화 (event.resultIndex부터 순회, 장시간 녹음 CPU 부하 감소)
 - 녹음 FAB (sticky bottom-16 좌측, idle/recording/post_recording 상시 표시)
 - 마이크 민감도 슬라이더 (GainNode 파이프라인, 실시간 조절)
 - 블록 편집: 더블클릭, Shift+Enter=줄바꿈, Ctrl+Enter=분할, Backspace/Delete 병합 (첫/마지막 가드)
 - 편집 확정 시 서버 PATCH 호출 (block_id 동기화)
+- API 에러 시 토스트 표시 (편집/분할/병합/중요도)
+- 단계 전환 전 서버 블록 수 검증 + 불일치 시 PUT bulk 저장
 - 수정 마크: 타임스탬프 색상 변경 + 아이콘 세로 스택
 - whitespace-pre-wrap으로 줄바꿈 렌더링
 - 복구 진입 시 기존 블록 로드 + 인라인 배너
 - sticky 상태바(top) + beforeunload + popstate 차단
 - 백그라운드 탭: useSilentAudio + useVisibility + 조건부 토스트
+- 사용자 스크롤 시 자동 스크롤 중지 (녹음 중 상단 블록 읽기 가능)
 
 ### 4단계 Whisper (~90%)
 - Whisper 스킵 선택 화면 (realtime 모드: [처리 시작] / [건너뛰기], upload 모드: 자동 시작)
@@ -205,7 +209,7 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 에러 재시도 + "Web Speech 결과만으로 계속" 폴백
 - Whisper 패키지 미설치 (MacBook 배포 시 설치 예정)
 
-### 5단계 편집 (~97%)
+### 5단계 편집 (~98%)
 - 블록 편집/분할/병합, 중요도 태깅 (팝오버 + 키보드 1/2/3/4/0)
 - AI 재태깅 로딩 스피너, 5→6 전환 로딩 오버레이
 - 요약 생략 모달 (5→7 직행 옵션)
@@ -213,6 +217,7 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 메타데이터 편집 (blur 저장), 핵심만 토글
 - 5단계 진입 시 서버 최신 블록 fetch
 - editMode 분기 (session/meeting API 경로 자동 전환)
+- ensureSessionId: meeting 응답의 meeting_id→session_id 매핑 (재편집 근본 수정)
 - 섹션 위계 강화 (서브텍스트 + bg-bg-subtle 래핑)
 - importance API 실패 시 롤백
 
@@ -225,12 +230,14 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 전사 참조 패널 (접힘)
 - 전용 저장 API (PATCH /summary + /action-items)
 
-### 7단계 전송 (~97%)
+### 7단계 전송 (~98%)
 - Slack 채널/스레드 선택 (카드형 메시지 목록 + 로딩 스피너)
 - .md export + 폴더 선택 (showDirectoryPicker, 미지원 시 prompt 폴백)
 - 체크박스 실행 (.md → Slack → complete 순서)
+- Slack/MD 미선택 시 히스토리만 저장 가능 (버튼 "완료" 표시)
 - 미입력 메타데이터 모달
 - 완료 화면: 결과 표시 + Slack 메시지 삭제 버튼 + 재시도 + 건너뛰기
+- 에러 원인별 안내 분기 (No summary → "요약 먼저 생성", 토큰 에러 → "설정 확인")
 - 미리보기 최신 데이터 fetch
 - 더블 클릭 가드
 
@@ -245,11 +252,13 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - Meeting 블록 편집 API 4종 (split, merge, patch, importance)
 - resummarize API
 
-### 설정 (~95%)
+### 설정 (~97%)
 - 테마 3-way 세그먼트 (시스템/라이트/다크 + Sun/Moon/Monitor 아이콘)
-- 템플릿 CRUD (모달 + Slack 채널 드롭다운 + 삭제 확인 모달)
+- 템플릿 CRUD (모달 + Slack 채널 드롭다운 + 새로고침 버튼 + 삭제 확인 모달)
+- 템플릿 드래그 순서 변경 (@dnd-kit, order 자동 증가)
 - 주소록 (참여자/장소 추가/삭제)
 - 연동 (Slack 토큰 변경/연결 테스트, Claude API 키 변경, Whisper 모델 드롭다운)
+- 토큰/API 키 변경 시 .env 파일 자동 동기화
 - 토큰 마스킹 표시
 - Slack 인사 문구 textarea (여러 줄 + 이모티콘)
 - 기본 저장 경로 (showDirectoryPicker)
@@ -265,13 +274,16 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 ### 공통 인프라
 - WizardLayout: nextSlot (하단 네비 Secondary+Primary 대칭), prevRoute, homeDisabled
 - 반응형 Stepper (768px 미만 축약)
-- Web Speech: onerror 분기, no-speech backoff, instanceIdRef
+- Web Speech: onerror 분기, no-speech backoff, instanceIdRef, interim 루프 최적화
 - useAudioStream: GainNode 파이프라인
 - useSilentAudio + useVisibility
 - formatTs 공통 함수 (4파일 통합)
 - Modal 포커스 복귀
-- asyncio.Lock (contacts, templates)
+- asyncio.Lock (contacts, templates) + WebSocket disconnect 시 lock 클린업
 - block_id 클라이언트-서버 동기화
+- PUT /sessions/{id}/blocks: 벌크 블록 교체 API (sync recovery)
+- ensureSessionId: meeting 응답 → session_id 매핑 헬퍼
+- audio.py: chunk 저장 시 session.json 쓰기 생략 (disconnect 시에만 최종 저장)
 
 ### 알려진 미구현/미완
 | 항목 | 상태 |
@@ -283,7 +295,7 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ### 기획→개발 전달 사항
 
-**(2026-04-23 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+**(2026-05-07 기준 모든 기획 변경 사항이 코드에 반영 완료)**
 
 이전 전달 사항 4건:
 1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅ 반영 완료
@@ -367,7 +379,7 @@ myfirstapp/
 
 ### 기획→개발 전달 사항
 
-**(2026-04-23 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+**(2026-05-07 기준 모든 기획 변경 사항이 코드에 반영 완료)**
 
 이전 전달 사항 (모두 반영 완료):
 - [2026-04-17] 디자인 시스템 v2 개편 — ✅

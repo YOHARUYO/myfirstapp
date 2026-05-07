@@ -64,15 +64,11 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                 await asyncio.to_thread(chunk_path.write_bytes, message["bytes"])
                 chunk_index += 1
 
-                async with lock:
-                    session = await asyncio.to_thread(_load_session, session_id)
-                    session.audio_chunk_count = chunk_index
-                    await asyncio.to_thread(_save_session, session)
-
                 await websocket.send_json({
                     "type": "chunk_ack",
                     "chunk_index": chunk_index - 1,
                 })
+                # session.json 쓰기는 생략 — disconnect 시 한 번만 저장
 
             elif "text" in message:
                 data = json.loads(message["text"])
@@ -116,10 +112,13 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
     except WebSocketDisconnect:
         async with lock:
             session = await asyncio.to_thread(_load_session, session_id)
+            session.audio_chunk_count = chunk_index  # 최종 chunk 수 저장
             if session.status == "recording":
                 session.status = "post_recording"
                 session.metadata.end_time = datetime.now().strftime("%H:%M:%S")
-                await asyncio.to_thread(_save_session, session)
+            await asyncio.to_thread(_save_session, session)
+        # 세션 lock 정리
+        _session_locks.pop(session_id, None)
 
 
 @router.post("/{session_id}/upload")
