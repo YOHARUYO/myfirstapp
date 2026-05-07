@@ -1,7 +1,7 @@
 # 개발 업무 보고서 — 2026-05-07
 
 > 작성 주체: 개발 세션
-> 대상 기간: 2026-04-24 ~ 2026-05-07 (열세 번째 ~ 열네 번째 개발 세션)
+> 대상 기간: 2026-04-24 ~ 2026-05-07 (열세 번째 ~ 열다섯 번째 개발 세션)
 > 이전 보고서: `reports/DEV-REPORT-20260424.md`
 
 ---
@@ -18,6 +18,12 @@
 | 카테고리 | 건수 | 요약 |
 |---------|------|------|
 | 30분+ 녹음 안정성 (QA-LONG-RECORDING) | 4건 | A: catch 빈 블록→토스트, B: handleNext 블록 수 검증+PUT bulk API, C: useWebSpeech interim 루프 최적화, D: audio.py chunk 저장 시 session.json 쓰기 생략+lock 클린업 |
+
+### 05-07 세션 (열다섯 번째)
+| 카테고리 | 건수 | 요약 |
+|---------|------|------|
+| .gitignore 보강 | 1건 | `backend/results/` 추가 — 사용자 export_path .md 저장 폴더 추적 방지 |
+| Slack MD 첨부 경로 수정 (QA-SLACK-MD-PATH) | 3건 | A: slack.py 검색 경로 후보(settings.json `export_path` 우선) + 응답에 `md_attached` 추가 / B: SendSave.tsx에서 `md_attached=false` 시 토스트 안내 (본 호출 + 재시도 핸들러) / 부수: history.py `delete_meeting`에도 동일 검색 로직 적용 (orphan .md 방지) |
 
 ---
 
@@ -36,7 +42,7 @@
 - `pages/Settings.tsx` — 템플릿 모달 채널 새로고침, 드롭다운 pr-10
 - `pages/MeetingSetup.tsx` — 드롭다운 pr-10
 
-### 04-27 미커밋 (이번 커밋에 포함)
+### 04-27 커밋 (`5a68379`)
 #### 백엔드
 - `routers/sessions.py` — `PUT /sessions/{id}/blocks` 벌크 블록 교체 API 신규
 - `routers/audio.py` — chunk 저장 시 session.json 쓰기 생략, disconnect 시 chunk_count 최종 저장, _session_locks 클린업
@@ -45,6 +51,18 @@
 - `pages/Recording.tsx` — handleEditConfirm/handleSplit/handleMerge/setBlockImportance catch→토스트, handleNext 블록 수 검증
 - `hooks/useWebSpeech.ts` — interim 루프 `event.resultIndex`부터 시작 (전체 순회 방지)
 
+### 05-07 변경
+#### 루트
+- `.gitignore` — `backend/results/` 추가 (`5570ff6` 단독 커밋)
+
+#### 백엔드
+- `routers/slack.py` — `send_slack_message`에서 `.md` 검색 후보를 `settings.json`의 `export_path` → `EXPORT_DIR` fallback 순서로 변경, 응답에 `md_attached: bool | None` 필드 추가
+- `routers/history.py` — `DATA_DIR` import 추가, `delete_meeting`의 `.md` 삭제 분기를 동일 검색 로직으로 변경 (후보 모두 삭제 → orphan 방지)
+
+#### 프론트엔드
+- `api/slack.ts` — `SlackSendResult`에 `md_attached: boolean | null` 필드 추가
+- `pages/SendSave.tsx` — Slack 전송 본 호출 + 에러 시 재시도 핸들러 모두에서 `saveMd && result.md_attached === false` 면 토스트로 안내 (".md 파일을 찾을 수 없어 첨부 없이 전송되었습니다. 저장 경로 설정을 확인해주세요.")
+
 ---
 
 ## 3. 커밋 이력
@@ -52,13 +70,15 @@
 | 커밋 | 내용 |
 |------|------|
 | `b550e97` | 재편집 근본 수정 + UX 개선 8건 (E1~E9, E5 제외) |
-| (이번 커밋) | 30분+ 녹음 안정성 4건 (A~D) + 리포트 + HANDOVER 갱신 |
+| `5a68379` | 30분+ 녹음 안정성 4건 (A~D) + 리포트 + HANDOVER 갱신 |
+| `5570ff6` | `.gitignore` 단독 — `backend/results/` 추가 |
+| (대기) | QA-SLACK-MD-PATH 반영 3건 (A + B + 부수) |
 
 ---
 
 ## 4. 현재 상태
 
-Sprint 1~5 전체 완료. QA 전수 조사 + 기획 변경 반영 + 사용자 보고 버그 + meeting 모드 근본 수정 + 재편집/UX 개선 + 장시간 녹음 안정성 완료.
+Sprint 1~5 전체 완료. QA 전수 조사 + 기획 변경 반영 + 사용자 보고 버그 + meeting 모드 근본 수정 + 재편집/UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 완료.
 
 미구현:
 - Whisper 패키지 설치 (MacBook 배포 시)
@@ -74,3 +94,4 @@ Sprint 1~5 전체 완료. QA 전수 조사 + 기획 변경 반영 + 사용자 �
 - E5 Slack App Reinstall + 새 토큰 적용
 - MacBook 배포 준비
 - 환경 의존 이슈 2건 (외부 마이크 인식, Web Speech 재작성) 실기기 테스트
+- QA-SLACK-MD-PATH 검증: (1) `export_path=results` 설정 + Slack 전송 → 스레드에 .md 첨부 확인, (2) 일부러 .md 삭제 후 전송 → `md_attached=false` 토스트 노출 확인, (3) `export_path` 설정 상태에서 회의 삭제 → 사용자 폴더의 .md도 함께 제거 확인

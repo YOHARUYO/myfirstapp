@@ -4,7 +4,7 @@ from typing import Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from config import MEETINGS_DIR, EXPORT_DIR
+from config import MEETINGS_DIR, EXPORT_DIR, DATA_DIR
 from models.meeting import Meeting
 
 router = APIRouter(prefix="/api/meetings", tags=["meetings"])
@@ -423,12 +423,28 @@ def delete_meeting(meeting_id: str):
     meeting_path.unlink()
 
     # Delete exported .md if exists
+    # 검색 우선순위: settings.json의 export_path → EXPORT_DIR (둘 다 있으면 모두 삭제 — orphan 방지)
     if m.metadata.title:
+        import json as _json
         title_safe = re.sub(r'[<>:"/\\|?*]', '_', m.metadata.title)
         date_str = (m.metadata.date or '').replace('-', '')
-        export_path = EXPORT_DIR / f"{title_safe}_{date_str}.md"
-        if export_path.exists():
-            export_path.unlink()
+        filename = f"{title_safe}_{date_str}.md"
+
+        candidates: list[Path] = []
+        settings_path = DATA_DIR / "settings.json"
+        if settings_path.exists():
+            try:
+                s = _json.loads(settings_path.read_text(encoding="utf-8"))
+                user_export = s.get("export_path", "") or ""
+                if user_export:
+                    candidates.append(Path(user_export) / filename)
+            except Exception:
+                pass
+        candidates.append(EXPORT_DIR / filename)
+
+        for candidate in candidates:
+            if candidate.exists():
+                candidate.unlink()
 
     # Delete merged audio if exists
     if m.merged_audio_path:

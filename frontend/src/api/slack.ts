@@ -30,6 +30,7 @@ export interface SlackSendResult {
   channel_name: string;
   message_ts: string;
   thread_ts: string | null;
+  md_attached: boolean | null;
 }
 
 export async function sendSlackMessage(

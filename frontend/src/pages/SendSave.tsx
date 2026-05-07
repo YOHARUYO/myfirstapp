@@ -170,6 +170,9 @@ export default function SendSave() {
         setSlackStatus('success');
         setSlackResult(`${result.channel_name} 전송 완료`);
         setSlackMessageTs(result.message_ts);
+        if (saveMd && result.md_attached === false) {
+          showToast('.md 파일을 찾을 수 없어 첨부 없이 전송되었습니다. 저장 경로 설정을 확인해주세요.');
+        }
       } catch (e: any) {
         setSlackStatus('error');
         setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');
@@ -251,6 +254,9 @@ export default function SendSave() {
                           setSlackStatus('success');
                           setSlackResult(`${result.channel_name} 전송 완료`);
                           setSlackMessageTs(result.message_ts);
+                          if (saveMd && result.md_attached === false) {
+                            showToast('.md 파일을 찾을 수 없어 첨부 없이 전송되었습니다. 저장 경로 설정을 확인해주세요.');
+                          }
                         } catch (e: any) {
                           setSlackStatus('error');
                           setSlackResult(e?.response?.data?.detail || 'Slack 전송 실패');

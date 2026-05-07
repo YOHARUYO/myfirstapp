@@ -170,12 +170,20 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ## 8. 현재 구현 완료 항목 (2026-05-07 기준)
 
-> **마지막 업데이트**: 2026-05-07 개발 세션 종료 시점
-> **최신 커밋**: `b550e97` + 미커밋 4건 (04-27 장시간 녹음 안정성)
+> **마지막 업데이트**: 2026-05-07 오후 (재부팅 직전 — 미커밋 변경 5건 있음)
+> **최신 커밋**: `5570ff6` (.gitignore — backend/results/ 추가)
+> **미커밋 (재부팅 후 그대로 유지됨)**:
+> - `backend/routers/slack.py` — QA-SLACK-MD-PATH A: settings.json export_path 우선 검색 + md_attached 응답
+> - `backend/routers/history.py` — QA-SLACK-MD-PATH 부수: delete_meeting의 .md 삭제도 동일 검색 로직
+> - `frontend/src/api/slack.ts` — SlackSendResult에 md_attached 필드 추가
+> - `frontend/src/pages/SendSave.tsx` — QA-SLACK-MD-PATH B: md_attached=false 시 토스트 (본/재시도 2곳)
+> - `QA-FIX/QA-SLACK-MD-PATH-20260507.md` (untracked) — 원본 QA 수정 프롬프트
+>
+> **상태**: 코드 반영 완료, 사용자 브라우저 검증 대기 중. 검증 항목은 `reports/DEV-REPORT-20260507.md` 5절 참조.
 
-### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성
+### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로
 
-모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성까지 마무리된 상태.
+모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일까지 마무리된 상태(검증 대기).
 
 ### 1단계 홈 (~98%)
 - 복구 카드형 배너 (status별 라우팅 + "이어서 진행" + "삭제하고 새로 시작")

@@ -278,19 +278,33 @@ def send_slack_message(req: SlackSendRequest):
         message_ts = result.get("ts", "")
 
         # Upload .md file if requested
+        # 검색 우선순위: settings.json의 export_path → EXPORT_DIR (fallback)
+        md_attached = False
         if req.attach_md:
             title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
             date_str = (session.metadata.date or '').replace('-', '')
             filename = f"{title_safe}_{date_str}.md"
-            export_path = EXPORT_DIR / filename
 
-            if export_path.exists():
+            candidates: list[Path] = []
+            if settings_path.exists():
+                try:
+                    s = _json.loads(settings_path.read_text(encoding="utf-8"))
+                    user_export = s.get("export_path", "") or ""
+                    if user_export:
+                        candidates.append(Path(user_export) / filename)
+                except Exception:
+                    pass
+            candidates.append(EXPORT_DIR / filename)
+
+            md_file = next((p for p in candidates if p.exists()), None)
+            if md_file is not None:
                 client.files_upload_v2(
                     channel=req.channel_id,
-                    file=str(export_path),
+                    file=str(md_file),
                     filename=filename,
                     thread_ts=message_ts,
                 )
+                md_attached = True
 
         channel_info = client.conversations_info(channel=req.channel_id)
         channel_name = channel_info.get("channel", {}).get("name", req.channel_id)
@@ -320,6 +334,7 @@ def send_slack_message(req: SlackSendRequest):
             "channel_name": f"#{channel_name}",
             "message_ts": message_ts,
             "thread_ts": req.thread_ts,
+            "md_attached": md_attached if req.attach_md else None,
         }
 
     except Exception as e:
