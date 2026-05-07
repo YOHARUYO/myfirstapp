@@ -8,29 +8,60 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File,
 from config import SESSIONS_DIR
 from models.session import Session
 from models.block import Block
+from services.session_io import (
+    load_session,
+    save_session,
+    get_session_lock,
+    release_session_lock,
+)
 
 router = APIRouter(prefix="/api/sessions", tags=["audio"])
 
-# Per-session locks to prevent concurrent writes (#7)
-_session_locks: dict[str, asyncio.Lock] = {}
+
+def _start_recording(session_id: str) -> Session:
+    with get_session_lock(session_id):
+        session = load_session(session_id)
+        session.status = "recording"
+        save_session(session)
+        return session
 
 
-def _get_lock(session_id: str) -> asyncio.Lock:
-    if session_id not in _session_locks:
-        _session_locks[session_id] = asyncio.Lock()
-    return _session_locks[session_id]
+def _append_block(session_id: str, block: Block) -> None:
+    with get_session_lock(session_id):
+        session = load_session(session_id)
+        session.blocks.append(block)
+        save_session(session)
 
 
-def _load_session(session_id: str) -> Session:
-    path = SESSIONS_DIR / session_id / "session.json"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
-    return Session.model_validate_json(path.read_text(encoding="utf-8"))
+def _record_resume(session_id: str, gap_seconds: float) -> None:
+    with get_session_lock(session_id):
+        session = load_session(session_id)
+        if session.blocks:
+            from models.session import RecordingGap
+            session.recording_gaps.append(RecordingGap(
+                after_block_id=session.blocks[-1].block_id,
+                gap_seconds=gap_seconds,
+            ))
+        session.status = "recording"
+        save_session(session)
 
 
-def _save_session(session: Session) -> None:
-    path = SESSIONS_DIR / session.session_id / "session.json"
-    path.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+def _finalize_recording(session_id: str, chunk_count: int) -> None:
+    with get_session_lock(session_id):
+        session = load_session(session_id)
+        session.audio_chunk_count = chunk_count
+        if session.status == "recording":
+            session.status = "post_recording"
+            session.metadata.end_time = datetime.now().strftime("%H:%M:%S")
+        save_session(session)
+
+
+def _finalize_upload(session_id: str, chunks_dir_str: str) -> None:
+    with get_session_lock(session_id):
+        session = load_session(session_id)
+        session.audio_chunks_dir = chunks_dir_str
+        session.status = "post_recording"
+        save_session(session)
 
 
 @router.websocket("/{session_id}/audio")
@@ -44,13 +75,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
 
     await websocket.accept()
 
-    lock = _get_lock(session_id)
-
-    # #6: Use asyncio.to_thread for file I/O
-    async with lock:
-        session = await asyncio.to_thread(_load_session, session_id)
-        session.status = "recording"
-        await asyncio.to_thread(_save_session, session)
+    session = await asyncio.to_thread(_start_recording, session_id)
 
     from uuid import uuid4
     chunk_index = session.audio_chunk_count
@@ -84,10 +109,7 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
                         source="web_speech",
                     )
 
-                    async with lock:
-                        session = await asyncio.to_thread(_load_session, session_id)
-                        session.blocks.append(block)
-                        await asyncio.to_thread(_save_session, session)
+                    await asyncio.to_thread(_append_block, session_id, block)
 
                     await websocket.send_json({
                         "type": "block_created",
@@ -98,27 +120,12 @@ async def audio_websocket(websocket: WebSocket, session_id: str):
 
                 elif data.get("type") == "recording_resumed":
                     gap_seconds = data.get("gap_seconds", 0)
-                    async with lock:
-                        session = await asyncio.to_thread(_load_session, session_id)
-                        if session.blocks:
-                            from models.session import RecordingGap
-                            session.recording_gaps.append(RecordingGap(
-                                after_block_id=session.blocks[-1].block_id,
-                                gap_seconds=gap_seconds,
-                            ))
-                        session.status = "recording"
-                        await asyncio.to_thread(_save_session, session)
+                    await asyncio.to_thread(_record_resume, session_id, gap_seconds)
 
     except WebSocketDisconnect:
-        async with lock:
-            session = await asyncio.to_thread(_load_session, session_id)
-            session.audio_chunk_count = chunk_index  # 최종 chunk 수 저장
-            if session.status == "recording":
-                session.status = "post_recording"
-                session.metadata.end_time = datetime.now().strftime("%H:%M:%S")
-            await asyncio.to_thread(_save_session, session)
-        # 세션 lock 정리
-        _session_locks.pop(session_id, None)
+        await asyncio.to_thread(_finalize_recording, session_id, chunk_index)
+        # 4~7단계에서 sessions.py가 같은 락을 사용하므로 여기서는 release하지 않음.
+        # complete_session / delete_session에서 정리됨.
 
 
 @router.post("/{session_id}/upload")
@@ -149,10 +156,7 @@ async def upload_audio(session_id: str, file: UploadFile = File(...)):
                 raise HTTPException(status_code=413, detail="파일 크기가 500MB를 초과합니다")
             f.write(chunk)
 
-    session = _load_session(session_id)
-    session.audio_chunks_dir = str(chunks_dir)
-    session.status = "post_recording"
-    _save_session(session)
+    await asyncio.to_thread(_finalize_upload, session_id, str(chunks_dir))
 
     # #12: Don't expose server file path
     return {"status": "uploaded", "filename": file.filename, "size": total}

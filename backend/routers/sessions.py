@@ -12,6 +12,12 @@ from config import SESSIONS_DIR, MEETINGS_DIR, EXPORT_DIR
 from models.session import Session
 from models.base import MeetingMetadata
 from models.meeting import Meeting
+from services.session_io import (
+    load_session as _io_load_session,
+    save_session as _save_session,
+    get_session_lock,
+    release_session_lock,
+)
 
 router = APIRouter(prefix="/api/sessions", tags=["sessions"])
 
@@ -27,17 +33,7 @@ def _validate_session_id(session_id: str) -> None:
 
 def _load_session(session_id: str) -> Session:
     _validate_session_id(session_id)
-    path = _session_path(session_id)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Session not found")
-    return Session.model_validate_json(path.read_text(encoding="utf-8"))
-
-
-def _save_session(session: Session) -> None:
-    session_dir = SESSIONS_DIR / session.session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
-    path = session_dir / "session.json"
-    path.write_text(session.model_dump_json(indent=2), encoding="utf-8")
+    return _io_load_session(session_id)
 
 
 def _has_active_session() -> Optional[str]:
@@ -114,73 +110,81 @@ class UpdateMetadataRequest(BaseModel):
 
 @router.patch("/{session_id}/metadata")
 def update_metadata(session_id: str, req: UpdateMetadataRequest):
-    session = _load_session(session_id)
-    meta_fields = {"title", "participants", "location", "language"}
-    update_data = req.model_dump(exclude_none=True)
-    for key, value in update_data.items():
-        if key in meta_fields:
-            setattr(session.metadata, key, value)
-        else:
-            setattr(session, key, value)
-    _save_session(session)
-    return session.model_dump()
+    _validate_session_id(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        meta_fields = {"title", "participants", "location", "language"}
+        update_data = req.model_dump(exclude_none=True)
+        for key, value in update_data.items():
+            if key in meta_fields:
+                setattr(session.metadata, key, value)
+            else:
+                setattr(session, key, value)
+        _save_session(session)
+        return session.model_dump()
 
 
 @router.post("/{session_id}/stop")
 def stop_recording(session_id: str):
-    session = _load_session(session_id)
-    if session.status != "recording":
-        raise HTTPException(status_code=400, detail="Session is not recording")
-    session.status = "post_recording"
-    now = datetime.now()
-    session.metadata.end_time = now.strftime("%H:%M:%S")
-    _save_session(session)
-    return session.model_dump()
+    _validate_session_id(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        if session.status != "recording":
+            raise HTTPException(status_code=400, detail="Session is not recording")
+        session.status = "post_recording"
+        now = datetime.now()
+        session.metadata.end_time = now.strftime("%H:%M:%S")
+        _save_session(session)
+        return session.model_dump()
 
 
 @router.post("/{session_id}/resume")
 def resume_recording(session_id: str):
-    session = _load_session(session_id)
-    if session.status != "post_recording":
-        raise HTTPException(status_code=400, detail="Session is not in post_recording")
-    session.status = "recording"
-    _save_session(session)
-    return session.model_dump()
+    _validate_session_id(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        if session.status != "post_recording":
+            raise HTTPException(status_code=400, detail="Session is not in post_recording")
+        session.status = "recording"
+        _save_session(session)
+        return session.model_dump()
 
 
 @router.post("/{session_id}/complete")
 def complete_session(session_id: str):
     _validate_session_id(session_id)
-    session = _load_session(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
 
-    # #9: Calculate duration
-    if session.metadata.start_time and session.metadata.end_time:
-        try:
-            today = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
-            start = datetime.fromisoformat(f"{today}T{session.metadata.start_time}")
-            end = datetime.fromisoformat(f"{today}T{session.metadata.end_time}")
-            session.metadata.duration_seconds = int((end - start).total_seconds())
-        except (ValueError, TypeError):
-            pass
+        # #9: Calculate duration
+        if session.metadata.start_time and session.metadata.end_time:
+            try:
+                today = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
+                start = datetime.fromisoformat(f"{today}T{session.metadata.start_time}")
+                end = datetime.fromisoformat(f"{today}T{session.metadata.end_time}")
+                session.metadata.duration_seconds = int((end - start).total_seconds())
+            except (ValueError, TypeError):
+                pass
 
-    meeting_id = session.session_id.replace("session_", "mtg_")
-    meeting = Meeting(
-        meeting_id=meeting_id,
-        created_at=session.created_at,
-        completed_at=datetime.now().isoformat(),
-        metadata=session.metadata,
-        blocks=session.blocks,
-        summary_markdown=session.summary_markdown,
-        action_items=session.action_items,
-        keywords=session.keywords,
-    )
+        meeting_id = session.session_id.replace("session_", "mtg_")
+        meeting = Meeting(
+            meeting_id=meeting_id,
+            created_at=session.created_at,
+            completed_at=datetime.now().isoformat(),
+            metadata=session.metadata,
+            blocks=session.blocks,
+            summary_markdown=session.summary_markdown,
+            action_items=session.action_items,
+            keywords=session.keywords,
+        )
 
-    meeting_path = MEETINGS_DIR / f"{meeting_id}.json"
-    meeting_path.write_text(meeting.model_dump_json(indent=2), encoding="utf-8")
+        meeting_path = MEETINGS_DIR / f"{meeting_id}.json"
+        meeting_path.write_text(meeting.model_dump_json(indent=2), encoding="utf-8")
 
-    session.status = "completed"
-    _save_session(session)
+        session.status = "completed"
+        _save_session(session)
 
+    release_session_lock(session_id)
     return meeting.model_dump()
 
 
@@ -191,47 +195,48 @@ def summarize_session(session_id: str):
     from services.summary_assembler import assemble_full_summary
 
     _validate_session_id(session_id)
-    session = _load_session(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
 
-    if not session.blocks:
-        raise HTTPException(status_code=400, detail="No blocks to summarize")
+        if not session.blocks:
+            raise HTTPException(status_code=400, detail="No blocks to summarize")
 
-    try:
-        claude_response = summarize_blocks(
-            session.blocks,
-            session.metadata.title,
-            session.metadata.participants,
-            session.metadata.date or "",
-        )
-
-        date_str = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
         try:
-            dt = datetime.strptime(date_str, "%Y-%m-%d")
-            weekdays = ["월", "화", "수", "목", "금", "토", "일"]
-            date_str = f"{dt.strftime('%m/%d')}({weekdays[dt.weekday()]})"
-        except (ValueError, IndexError):
-            pass
+            claude_response = summarize_blocks(
+                session.blocks,
+                session.metadata.title,
+                session.metadata.participants,
+                session.metadata.date or "",
+            )
 
-        metadata_dict = session.metadata.model_dump()
-        full_markdown, keywords, action_items = assemble_full_summary(
-            metadata_dict, claude_response, date_str, session.metadata.title,
-        )
+            date_str = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
+            try:
+                dt = datetime.strptime(date_str, "%Y-%m-%d")
+                weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+                date_str = f"{dt.strftime('%m/%d')}({weekdays[dt.weekday()]})"
+            except (ValueError, IndexError):
+                pass
 
-        session.summary_markdown = full_markdown
-        session.action_items = action_items
-        session.keywords = keywords
-        session.status = "summarizing"
-        _save_session(session)
-    except Exception as e:
-        session.status = "editing"
-        _save_session(session)
-        raise HTTPException(status_code=500, detail=f"요약 생성 실패: {str(e)}")
+            metadata_dict = session.metadata.model_dump()
+            full_markdown, keywords, action_items = assemble_full_summary(
+                metadata_dict, claude_response, date_str, session.metadata.title,
+            )
 
-    return {
-        "summary_markdown": full_markdown,
-        "action_items": action_items,
-        "keywords": keywords,
-    }
+            session.summary_markdown = full_markdown
+            session.action_items = action_items
+            session.keywords = keywords
+            session.status = "summarizing"
+            _save_session(session)
+        except Exception as e:
+            session.status = "editing"
+            _save_session(session)
+            raise HTTPException(status_code=500, detail=f"요약 생성 실패: {str(e)}")
+
+        return {
+            "summary_markdown": full_markdown,
+            "action_items": action_items,
+            "keywords": keywords,
+        }
 
 
 class UpdateSummaryRequest(BaseModel):
@@ -242,10 +247,11 @@ class UpdateSummaryRequest(BaseModel):
 def update_summary(session_id: str, req: UpdateSummaryRequest):
     """Save edited summary markdown (6단계 편집 확정 시)."""
     _validate_session_id(session_id)
-    session = _load_session(session_id)
-    session.summary_markdown = req.summary_markdown
-    _save_session(session)
-    return {"ok": True}
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        session.summary_markdown = req.summary_markdown
+        _save_session(session)
+        return {"ok": True}
 
 
 class UpdateActionItemsRequest(BaseModel):
@@ -256,10 +262,11 @@ class UpdateActionItemsRequest(BaseModel):
 def update_action_items(session_id: str, req: UpdateActionItemsRequest):
     """Save edited action items (6단계 편집 확정 시)."""
     _validate_session_id(session_id)
-    session = _load_session(session_id)
-    session.action_items = req.action_items
-    _save_session(session)
-    return {"ok": True}
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        session.action_items = req.action_items
+        _save_session(session)
+        return {"ok": True}
 
 
 def _escape_md(text: str) -> str:
@@ -277,10 +284,11 @@ def replace_all_blocks(session_id: str, req: BulkBlocksRequest):
     """Replace all blocks in a session (for sync recovery)."""
     _validate_session_id(session_id)
     from models.block import Block
-    session = _load_session(session_id)
-    session.blocks = [Block.model_validate(b) for b in req.blocks]
-    _save_session(session)
-    return {"ok": True, "block_count": len(session.blocks)}
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        session.blocks = [Block.model_validate(b) for b in req.blocks]
+        _save_session(session)
+        return {"ok": True, "block_count": len(session.blocks)}
 
 
 class ExportMdRequest(BaseModel):
@@ -345,11 +353,14 @@ def delete_session(session_id: str):
     if not session_dir.exists():
         raise HTTPException(status_code=404, detail="Session not found")
 
-    session = _load_session(session_id)
-    if session.status == "processing":
-        raise HTTPException(status_code=409, detail="처리 중인 세션은 삭제할 수 없습니다. 처리 완료 후 다시 시도해주세요.")
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        if session.status == "processing":
+            raise HTTPException(status_code=409, detail="처리 중인 세션은 삭제할 수 없습니다. 처리 완료 후 다시 시도해주세요.")
 
-    shutil.rmtree(session_dir)
+        shutil.rmtree(session_dir)
+
+    release_session_lock(session_id)
     return {"deleted": session_id}
 
 
@@ -363,15 +374,16 @@ class UpdateBlockRequest(BaseModel):
 @router.patch("/{session_id}/blocks/{block_id}")
 def update_block(session_id: str, block_id: str, req: UpdateBlockRequest):
     _validate_session_id(session_id)
-    session = _load_session(session_id)
-    for block in session.blocks:
-        if block.block_id == block_id:
-            if block.text != req.text:
-                block.text = req.text
-                block.is_edited = True
-                block.source = "user_edit"
-            _save_session(session)
-            return block.model_dump()
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        for block in session.blocks:
+            if block.block_id == block_id:
+                if block.text != req.text:
+                    block.text = req.text
+                    block.is_edited = True
+                    block.source = "user_edit"
+                _save_session(session)
+                return block.model_dump()
     raise HTTPException(status_code=404, detail="Block not found")
 
 
@@ -382,42 +394,43 @@ class SplitBlockRequest(BaseModel):
 @router.post("/{session_id}/blocks/{block_id}/split")
 def split_block(session_id: str, block_id: str, req: SplitBlockRequest):
     _validate_session_id(session_id)
-    session = _load_session(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
 
-    for i, block in enumerate(session.blocks):
-        if block.block_id == block_id:
-            pos = req.cursor_position
-            if pos <= 0 or pos >= len(block.text):
-                raise HTTPException(status_code=400, detail="Invalid cursor position")
+        for i, block in enumerate(session.blocks):
+            if block.block_id == block_id:
+                pos = req.cursor_position
+                if pos <= 0 or pos >= len(block.text):
+                    raise HTTPException(status_code=400, detail="Invalid cursor position")
 
-            text_before = block.text[:pos].rstrip()
-            text_after = block.text[pos:].lstrip()
+                text_before = block.text[:pos].rstrip()
+                text_after = block.text[pos:].lstrip()
 
-            # 원본 end를 보존
-            original_end = block.timestamp_end
-            mid_time = block.timestamp_start + (original_end - block.timestamp_start) * (pos / len(block.text))
+                # 원본 end를 보존
+                original_end = block.timestamp_end
+                mid_time = block.timestamp_start + (original_end - block.timestamp_start) * (pos / len(block.text))
 
-            # 원본 블록 수정
-            block.text = text_before
-            block.timestamp_end = mid_time
+                # 원본 블록 수정
+                block.text = text_before
+                block.timestamp_end = mid_time
 
-            # 새 블록 생성
-            from models.block import Block
-            new_block = Block(
-                block_id=f"blk_{uuid4().hex[:8]}",
-                timestamp_start=mid_time,
-                timestamp_end=original_end,
-                text=text_after,
-                source=block.source,
-                is_edited=block.is_edited,
-                importance=block.importance,
-                importance_source=block.importance_source,
-                speaker=None,
-            )
+                # 새 블록 생성
+                from models.block import Block
+                new_block = Block(
+                    block_id=f"blk_{uuid4().hex[:8]}",
+                    timestamp_start=mid_time,
+                    timestamp_end=original_end,
+                    text=text_after,
+                    source=block.source,
+                    is_edited=block.is_edited,
+                    importance=block.importance,
+                    importance_source=block.importance_source,
+                    speaker=None,
+                )
 
-            session.blocks.insert(i + 1, new_block)
-            _save_session(session)
-            return {"block": block.model_dump(), "new_block": new_block.model_dump()}
+                session.blocks.insert(i + 1, new_block)
+                _save_session(session)
+                return {"block": block.model_dump(), "new_block": new_block.model_dump()}
 
     raise HTTPException(status_code=404, detail="Block not found")
 
@@ -429,47 +442,48 @@ class MergeDirection(BaseModel):
 @router.post("/{session_id}/blocks/{block_id}/merge")
 def merge_block(session_id: str, block_id: str, req: MergeDirection):
     _validate_session_id(session_id)
-    session = _load_session(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
 
-    for i, block in enumerate(session.blocks):
-        if block.block_id == block_id:
-            if req.direction == "next":
-                if i + 1 >= len(session.blocks):
-                    raise HTTPException(status_code=400, detail="No next block to merge")
-                target = session.blocks[i + 1]
-                block.text = block.text + " " + target.text
-                block.timestamp_end = target.timestamp_end
-                # User tags always win, then higher importance
-                if block.importance_source == "user":
-                    pass
-                elif target.importance_source == "user":
-                    block.importance = target.importance
-                    block.importance_source = "user"
-                elif target.importance and (not block.importance or _imp_rank(target.importance) > _imp_rank(block.importance)):
-                    block.importance = target.importance
-                    block.importance_source = target.importance_source
-                block.is_edited = True
-                session.blocks.pop(i + 1)
-            else:  # prev
-                if i == 0:
-                    raise HTTPException(status_code=400, detail="No previous block to merge")
-                prev = session.blocks[i - 1]
-                prev.text = prev.text + " " + block.text
-                prev.timestamp_end = block.timestamp_end
-                if prev.importance_source == "user":
-                    pass
-                elif block.importance_source == "user":
-                    prev.importance = block.importance
-                    prev.importance_source = "user"
-                elif block.importance and (not prev.importance or _imp_rank(block.importance) > _imp_rank(prev.importance)):
-                    prev.importance = block.importance
-                    prev.importance_source = block.importance_source
-                prev.is_edited = True
-                session.blocks.pop(i)
-                block = prev
+        for i, block in enumerate(session.blocks):
+            if block.block_id == block_id:
+                if req.direction == "next":
+                    if i + 1 >= len(session.blocks):
+                        raise HTTPException(status_code=400, detail="No next block to merge")
+                    target = session.blocks[i + 1]
+                    block.text = block.text + " " + target.text
+                    block.timestamp_end = target.timestamp_end
+                    # User tags always win, then higher importance
+                    if block.importance_source == "user":
+                        pass
+                    elif target.importance_source == "user":
+                        block.importance = target.importance
+                        block.importance_source = "user"
+                    elif target.importance and (not block.importance or _imp_rank(target.importance) > _imp_rank(block.importance)):
+                        block.importance = target.importance
+                        block.importance_source = target.importance_source
+                    block.is_edited = True
+                    session.blocks.pop(i + 1)
+                else:  # prev
+                    if i == 0:
+                        raise HTTPException(status_code=400, detail="No previous block to merge")
+                    prev = session.blocks[i - 1]
+                    prev.text = prev.text + " " + block.text
+                    prev.timestamp_end = block.timestamp_end
+                    if prev.importance_source == "user":
+                        pass
+                    elif block.importance_source == "user":
+                        prev.importance = block.importance
+                        prev.importance_source = "user"
+                    elif block.importance and (not prev.importance or _imp_rank(block.importance) > _imp_rank(prev.importance)):
+                        prev.importance = block.importance
+                        prev.importance_source = block.importance_source
+                    prev.is_edited = True
+                    session.blocks.pop(i)
+                    block = prev
 
-            _save_session(session)
-            return block.model_dump()
+                _save_session(session)
+                return block.model_dump()
 
     raise HTTPException(status_code=404, detail="Block not found")
 
@@ -485,13 +499,14 @@ class UpdateImportanceRequest(BaseModel):
 @router.patch("/{session_id}/blocks/{block_id}/importance")
 def update_importance(session_id: str, block_id: str, req: UpdateImportanceRequest):
     _validate_session_id(session_id)
-    session = _load_session(session_id)
-    for block in session.blocks:
-        if block.block_id == block_id:
-            block.importance = req.importance
-            block.importance_source = "user" if req.importance else None
-            _save_session(session)
-            return block.model_dump()
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
+        for block in session.blocks:
+            if block.block_id == block_id:
+                block.importance = req.importance
+                block.importance_source = "user" if req.importance else None
+                _save_session(session)
+                return block.model_dump()
     raise HTTPException(status_code=404, detail="Block not found")
 
 
@@ -506,43 +521,44 @@ class SearchReplaceRequest(BaseModel):
 @router.post("/{session_id}/blocks/search-replace")
 def search_replace(session_id: str, req: SearchReplaceRequest):
     _validate_session_id(session_id)
-    session = _load_session(session_id)
+    with get_session_lock(session_id):
+        session = _load_session(session_id)
 
-    replaced_count = 0
-    skipped_locked_count = 0
-    affected_block_ids = []
+        replaced_count = 0
+        skipped_locked_count = 0
+        affected_block_ids = []
 
-    for block in session.blocks:
-        if req.skip_edited_blocks and block.is_edited:
-            if req.search in block.text or (not req.case_sensitive and req.search.lower() in block.text.lower()):
-                skipped_locked_count += 1
-            continue
+        for block in session.blocks:
+            if req.skip_edited_blocks and block.is_edited:
+                if req.search in block.text or (not req.case_sensitive and req.search.lower() in block.text.lower()):
+                    skipped_locked_count += 1
+                continue
 
-        original_text = block.text
+            original_text = block.text
 
-        if req.case_sensitive:
-            if req.whole_word:
-                pattern = re.compile(r'\b' + re.escape(req.search) + r'\b')
+            if req.case_sensitive:
+                if req.whole_word:
+                    pattern = re.compile(r'\b' + re.escape(req.search) + r'\b')
+                else:
+                    pattern = re.compile(re.escape(req.search))
             else:
-                pattern = re.compile(re.escape(req.search))
-        else:
-            flags = re.IGNORECASE
-            if req.whole_word:
-                pattern = re.compile(r'\b' + re.escape(req.search) + r'\b', flags)
-            else:
-                pattern = re.compile(re.escape(req.search), flags)
+                flags = re.IGNORECASE
+                if req.whole_word:
+                    pattern = re.compile(r'\b' + re.escape(req.search) + r'\b', flags)
+                else:
+                    pattern = re.compile(re.escape(req.search), flags)
 
-        new_text = pattern.sub(req.replace, block.text)
-        if new_text != original_text:
-            count = len(pattern.findall(original_text))
-            replaced_count += count
-            block.text = new_text
-            affected_block_ids.append(block.block_id)
+            new_text = pattern.sub(req.replace, block.text)
+            if new_text != original_text:
+                count = len(pattern.findall(original_text))
+                replaced_count += count
+                block.text = new_text
+                affected_block_ids.append(block.block_id)
 
-    _save_session(session)
+        _save_session(session)
 
-    return {
-        "replaced_count": replaced_count,
-        "skipped_locked_count": skipped_locked_count,
-        "affected_block_ids": affected_block_ids,
-    }
+        return {
+            "replaced_count": replaced_count,
+            "skipped_locked_count": skipped_locked_count,
+            "affected_block_ids": affected_block_ids,
+        }

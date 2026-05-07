@@ -7,3 +7,8 @@ __pycache__/
 *.pyc
 dist/
 .vite/
+
+# session_io tempfile (예외 시 잔여 가능)
+backend/data/sessions/**/.session.json.*.tmp
+# 손상 자동 복구 백업
+backend/data/sessions/**/session.json.corrupted-*
