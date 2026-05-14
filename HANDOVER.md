@@ -307,15 +307,16 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ### 기획→개발 전달 사항
 
-**(2026-05-14 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+**[2026-05-14] 데이터 흐름 근본 수정 — 저장 경로 폐기 + 브라우저 다운로드 일원화**: `reports/PLAN-DEV-HANDOFF-20260514.md` — ⏳ 개발 세션 반영 대기 (사용자 보고 이슈 1·2 근본 수정)
+**[2026-05-14] UI 회귀 — 히스토리 하단 버튼 계층화 + 7단계 체크박스 모바일 동작**: `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ⏳ 개발 세션 반영 대기 (검수 세션 발견)
 
-이전 전달 사항 6건:
-1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅ 반영 완료
-2. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅ 반영 완료
-3. `reports/PLAN-REPORT-20260422.md` 8절 — ✅ 반영 완료
-4. `reports/PLAN-DEV-HANDOFF-20260423.md` — ✅ 반영 완료 (동기화 10건 확인 + 신규 2건 구현)
-5. `reports/PLAN-DEV-HANDOFF-20260507.md` — ✅ 반영 완료 (commit `e262762`, 녹음 파일 내보내기 신규 기능)
-6. `reports/PLAN-DEV-HANDOFF-20260507-2.md` — ✅ 반영 완료 (commit `e262762`, #전송됨 태그 누락 + textarea ring 잘림)
+이전 전달 사항 6건 (모두 반영 완료):
+1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅
+2. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅
+3. `reports/PLAN-REPORT-20260422.md` 8절 — ✅
+4. `reports/PLAN-DEV-HANDOFF-20260423.md` — ✅ (동기화 10건 확인 + 신규 2건 구현)
+5. `reports/PLAN-DEV-HANDOFF-20260507.md` — ✅ (commit `e262762`, 녹음 파일 내보내기 신규 기능)
+6. `reports/PLAN-DEV-HANDOFF-20260507-2.md` — ✅ (commit `e262762`, #전송됨 태그 누락 + textarea ring 잘림)
 
 새 기획 변경이 있으면 이 섹션에 기록.
 
@@ -393,7 +394,8 @@ myfirstapp/
 
 ### 기획→개발 전달 사항
 
-**(2026-05-14 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+**[2026-05-14] 데이터 흐름 근본 수정 — 저장 경로 폐기 + 브라우저 다운로드 일원화**: `reports/PLAN-DEV-HANDOFF-20260514.md` — ⏳ 개발 세션 반영 대기
+**[2026-05-14] UI 회귀 — 히스토리 하단 버튼 계층화 + 7단계 체크박스 모바일 동작**: `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ⏳ 개발 세션 반영 대기
 
 이전 전달 사항 (모두 반영 완료):
 - [2026-04-17] 디자인 시스템 v2 개편 — ✅

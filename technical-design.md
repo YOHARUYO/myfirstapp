@@ -343,10 +343,10 @@ myfirstapp/
     "model": "medium"
   },
   "slack_greeting": "오늘 진행된 회의 회의록 공유드립니다~!",
-  "export_path": "C:\\Users\\...\\meetings",
   "summary_template": "default"
 }
 ```
+> **`export_path` 제거 (2026-05-14)**: 이전에는 사용자 .md 저장 경로 설정 필드였으나 `showDirectoryPicker`가 절대 경로를 반환하지 않아 실제로 작동하지 않음. 모든 사용자 다운로드는 브라우저 다운로드 폴더로 일원화. 백엔드 자체 .md 보관은 `EXPORT_DIR` 환경 변수로 통제.
 
 ### 3-6. 주소록 (Contacts)
 ```json
@@ -375,7 +375,8 @@ myfirstapp/
 | `POST` | `/api/sessions/{id}/stop` | 녹음 중지 (status → post_recording) |
 | `POST` | `/api/sessions/{id}/resume` | 녹음 재개 (status → recording, gap 기록) |
 | `POST` | `/api/sessions/{id}/complete` | 세션 완료 → Meeting으로 변환 + JSON 히스토리 저장만. Slack 전송/.md 저장은 별도 API |
-| `POST` | `/api/sessions/{id}/export-md` | .md 파일 생성 및 저장 (7단계 체크박스 선택 시) |
+| `POST` | `/api/sessions/{id}/export-md` | .md 파일 생성. 응답으로 .md 본문을 blob 스트림 반환 (브라우저 다운로드용). 백엔드는 동시에 `EXPORT_DIR`에 자체 보관 (Slack 첨부에 사용) |
+| `POST` | `/api/sessions/{id}/export-audio?format=webm\|mp3` | 녹음 파일 다운로드. 응답으로 오디오 blob 스트림 반환. webm은 원본, mp3는 ffmpeg 온디맨드 변환 |
 | `DELETE` | `/api/sessions/{id}` | 세션 취소/삭제 |
 
 > **동시 세션 방지**: `POST /api/sessions` 호출 시 서버가 `status`가 `completed`가 아닌 기존 세션이 있는지 확인. 있으면 409 Conflict 반환. 즉 `recording`, `post_recording`, `processing`, `editing`, `summarizing` 상태 모두 활성 세션으로 간주하여 새 세션 생성을 차단.
@@ -531,7 +532,8 @@ myfirstapp/
 | Method | Endpoint | 설명 |
 |--------|----------|------|
 | `POST` | `/api/meetings/{id}/resummarize` | 기존 Meeting 대상 요약 재생성 |
-| `POST` | `/api/meetings/{id}/export-md` | .md 파일 재생성 (재편집 후) |
+| `POST` | `/api/meetings/{id}/export-md` | .md 파일 재생성. 응답으로 .md 본문을 blob 스트림 반환 (히스토리 재편집 후 다운로드 또는 재전송용). 백엔드 `EXPORT_DIR` 갱신 |
+| `POST` | `/api/meetings/{id}/export-audio?format=webm\|mp3` | (재편집·재전송 흐름용 명시. 실제 다운로드는 `GET /api/meetings/{id}/audio?format=...`를 사용해도 동일 결과) |
 | `POST` | `/api/meetings/{id}/resend-slack` | Slack 재전송 (다른 채널/스레드 선택 가능) |
 
 ### 4-8. Slack
@@ -569,7 +571,7 @@ myfirstapp/
   "md_attached": true
 }
 ```
-- `md_attached`: `attach_md=true`였을 때 .md 첨부 성공 여부. `true`(첨부됨) / `false`(파일을 찾지 못해 건너뜀) / `null`(요청에서 첨부 미요청). 검색 우선순위: 설정의 `export_path` → `EXPORT_DIR` fallback.
+- `md_attached`: `attach_md=true`였을 때 .md 첨부 성공 여부. `true`(첨부됨) / `false`(파일을 찾지 못해 건너뜀) / `null`(요청에서 첨부 미요청). 검색 위치: `EXPORT_DIR` (백엔드 자체 보관 폴더). 신규 작성 흐름에서는 7단계 실행 시 export-md가 .md를 `EXPORT_DIR`에 먼저 만든 뒤 Slack 전송 단계가 이를 첨부.
 
 **`GET /api/slack/channels/{id}/messages` 응답 바디** (서버에서 가공):
 ```json
@@ -1099,8 +1101,8 @@ def build_slack_message(meeting, settings):
 (전체 블록 텍스트, 타임스탬프 포함)
 ```
 - `summary_markdown` + action_items 목록 + 전사 원본을 하나의 .md로 결합
-- Slack 첨부: `files.upload` API로 메시지와 함께 전송
-- 로컬 저장: `export_path` 설정 경로에 `{제목}_{날짜}.md` 파일명으로 저장
+- Slack 첨부: `files.upload` API로 메시지와 함께 전송 (백엔드 `EXPORT_DIR` 보관본 사용)
+- 사용자 다운로드: 7단계 ☑ .md 다운로드 체크 시 응답 blob을 브라우저 다운로드 폴더로 저장. 파일명 `{제목}_{날짜}.md` (백엔드가 `Content-Disposition` 헤더로 지정)
 
 ---
 
@@ -1248,15 +1250,16 @@ EXPORT_DIR=./data/exports
   ↓
 [7단계 UI] 사용자가 체크박스로 선택
   ↓
-  ├─ ☑ Slack 전송 → POST /api/slack/send
-  ├─ ☑ .md 저장  → POST /api/sessions/{id}/export-md
+  ├─ ☑ .md 다운로드      → POST /api/sessions/{id}/export-md (blob 응답 → 브라우저 다운로드)
+  ├─ ☐ 녹음 파일 다운로드 → POST /api/sessions/{id}/export-audio (blob 응답 → 브라우저 다운로드)
+  ├─ ☑ Slack 전송         → POST /api/slack/send (백엔드 EXPORT_DIR의 .md 첨부)
   └─ ✓ JSON 히스토리 (항상)
   ↓
 [완료] POST /api/sessions/{id}/complete
   ↓  Session → Meeting 변환 + JSON 저장
-  ↓  Slack 전송 결과·.md 경로를 Meeting에 기록
+  ↓  Slack 전송 결과(slack_sent)를 Meeting에 기록
 ```
-> `complete`는 변환+저장만 담당. Slack 전송과 .md 생성은 별도 API로 분리되어 체크박스 선택에 따라 호출 여부 결정. 7단계 UI에서 "실행" 버튼 클릭 시 선택된 항목의 API를 순차 호출 후 마지막에 complete 호출.
+> `complete`는 변환+저장만 담당. .md/녹음 생성과 Slack 전송은 별도 API. 7단계 UI 실행 순서: .md 다운로드 → 녹음 다운로드 → Slack 전송 → complete (Slack 첨부에 .md가 필요하므로 .md 생성이 Slack 전송보다 앞). 사용자에게 보이는 다운로드는 브라우저 다운로드 폴더에 저장, 백엔드 자체 보관은 `EXPORT_DIR`에 별도 유지.
 
 ---
 

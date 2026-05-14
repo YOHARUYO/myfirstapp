@@ -208,6 +208,34 @@ v1과 동일. Mic / Settings / ArrowLeft / Clock / ChevronRight / AlertCircle / 
 | Danger | `bg-recording text-white rounded-lg` | `bg-recording text-white rounded-lg px-5 py-3 font-semibold` |
 | Ghost | `text-text-secondary hover:text-text` | 유지 |
 
+### 버튼 그룹 위계 (2026-05-14 추가)
+
+여러 버튼을 한 영역에 배치할 때 적용. 히스토리 상세 하단·7단계 체크박스 영역 등.
+
+**그룹 분류 원칙**:
+- **주 액션 (Primary)**: 화면의 핵심 흐름 (예: 재편집·재전송)
+- **보조 (Secondary)**: 부수 동작 (예: 다운로드)
+- **위험 (Danger)**: 되돌릴 수 없는 동작 (예: 삭제)
+
+**간격 (gap) 규칙**:
+- 그룹 내 버튼 간: `gap-2` (8px)
+- 그룹 간: `gap-6` (24px) — 시각적 단절로 그룹화를 자연스럽게 드러냄
+- 컨테이너는 `flex flex-wrap items-center`로 좁은 폭 대비
+
+**줄바꿈 정책**:
+- **라벨은 어절(단어) 단위로 유지** — 한국어 라벨이 글자 중간에서 잘리지 않도록 버튼 라벨에 `whitespace-nowrap` 필수
+- 컨테이너의 `flex-wrap`이 좁은 폭에서 버튼 단위로 줄바꿈
+- 결과: "녹음 다운로드" 같은 라벨이 한 덩어리로 유지되면서 그룹 단위로 자연스럽게 다음 줄로 내려감
+
+**색상**:
+- Primary·Secondary 그룹: 위 버튼 표의 Secondary 톤(`bg-bg-subtle`) 또는 Primary 톤 사용
+- Danger 그룹: `text-recording` (강조 색) — 위험 인지 유지
+
+**모바일 패턴 (체크박스·세그먼트 등 인라인 컨트롤)**:
+- 데스크탑(≥768px): `flex-row` 한 줄
+- 모바일(<768px): `flex-col sm:flex-row` 수직 스택
+- 종속 컨트롤(예: 체크박스에 딸린 형식 세그먼트)은 모바일에서 자연스럽게 아래로 내려옴
+
 ### 카드/리스트 항목 (v2 핵심 변경)
 
 **v1:**
