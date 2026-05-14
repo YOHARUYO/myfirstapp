@@ -170,20 +170,24 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ## 8. 현재 구현 완료 항목 (2026-05-07 기준)
 
-> **마지막 업데이트**: 2026-05-07 오후 (재부팅 직전 — 미커밋 변경 5건 있음)
-> **최신 커밋**: `5570ff6` (.gitignore — backend/results/ 추가)
-> **미커밋 (재부팅 후 그대로 유지됨)**:
-> - `backend/routers/slack.py` — QA-SLACK-MD-PATH A: settings.json export_path 우선 검색 + md_attached 응답
-> - `backend/routers/history.py` — QA-SLACK-MD-PATH 부수: delete_meeting의 .md 삭제도 동일 검색 로직
-> - `frontend/src/api/slack.ts` — SlackSendResult에 md_attached 필드 추가
-> - `frontend/src/pages/SendSave.tsx` — QA-SLACK-MD-PATH B: md_attached=false 시 토스트 (본/재시도 2곳)
-> - `QA-FIX/QA-SLACK-MD-PATH-20260507.md` (untracked) — 원본 QA 수정 프롬프트
+> **마지막 업데이트**: 2026-05-14 (문서 정합성 정리)
+> **최신 커밋**: `e262762` (녹음 파일 내보내기 + #전송됨 태그 누락 + textarea ring 잘림) — origin/master push 완료
+> **최근 커밋 4건 (모두 origin push 완료):**
+> - `e262762` — 녹음 파일 내보내기 신규 기능 + #전송됨 태그 누락 + textarea ring 잘림 (PLAN-DEV-HANDOFF-20260507 + -2)
+> - `69948e7` — 30분+ 녹음 session.json 손상 근본 수정 (atomic write + 공통 threading.Lock + 자동 복구)
+> - `cd8f3d9` — Slack MD 첨부 경로 통일 (settings.json export_path 우선 검색 + md_attached 토스트)
+> - `5570ff6` — .gitignore에 backend/results/ 추가
 >
-> **상태**: 코드 반영 완료, 사용자 브라우저 검증 대기 중. 검증 항목은 `reports/DEV-REPORT-20260507.md` 5절 참조.
+> **검증 완료 (검수 세션 통과):**
+> - QA-SESSION-RACE: 200 worker 동시 append 시뮬 통과 (errors 0 / JSON valid / tempfile 잔여 0) + 손상돼있던 a357f55c 세션 자동 복구 성공 (166블록 무손실, status="completed")
+> - QA-SLACK-MD-PATH: 사용자 시나리오 1(오늘자 실험용 회의 재전송) 직접 확인 → Slack 채널에 .md 첨부 정상
+> - 27분 실사용 녹음 정상
+>
+> **상태**: 모든 Critical 이슈 종결. 운영 사용 가능. 다음 검증 포인트는 30~60분 실회의 1회의 응답 지연 체감 여부 + e262762 신규 기능 실사용 시연.
 
-### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로
+### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기
 
-모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일까지 마무리된 상태(검증 대기).
+모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 + 30분+ 녹음 race 근본 수정 + 녹음 파일 내보내기 신규 기능까지 마무리된 상태.
 
 ### 1단계 홈 (~98%)
 - 복구 카드형 배너 (status별 라우팅 + "이어서 진행" + "삭제하고 새로 시작")
@@ -303,13 +307,15 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ### 기획→개발 전달 사항
 
-**(2026-05-07 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+**(2026-05-14 기준 모든 기획 변경 사항이 코드에 반영 완료)**
 
-이전 전달 사항 4건:
+이전 전달 사항 6건:
 1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅ 반영 완료
 2. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅ 반영 완료
 3. `reports/PLAN-REPORT-20260422.md` 8절 — ✅ 반영 완료
 4. `reports/PLAN-DEV-HANDOFF-20260423.md` — ✅ 반영 완료 (동기화 10건 확인 + 신규 2건 구현)
+5. `reports/PLAN-DEV-HANDOFF-20260507.md` — ✅ 반영 완료 (commit `e262762`, 녹음 파일 내보내기 신규 기능)
+6. `reports/PLAN-DEV-HANDOFF-20260507-2.md` — ✅ 반영 완료 (commit `e262762`, #전송됨 태그 누락 + textarea ring 잘림)
 
 새 기획 변경이 있으면 이 섹션에 기록.
 
@@ -387,12 +393,13 @@ myfirstapp/
 
 ### 기획→개발 전달 사항
 
-**(2026-05-07 기준 모든 기획 변경 사항이 코드에 반영 완료)**
+**(2026-05-14 기준 모든 기획 변경 사항이 코드에 반영 완료)**
 
 이전 전달 사항 (모두 반영 완료):
 - [2026-04-17] 디자인 시스템 v2 개편 — ✅
 - [2026-04-21~22] 실사용 피드백 기반 대량 변경 — ✅
 - [2026-04-23] 기획 동기화 10건 + 신규 2건 (템플릿 드래그, Slack 메시지 수정) — ✅
+- [2026-05-07] 녹음 파일 내보내기 + 사용자 보고 UI 수정 2건 — ✅ (commit `e262762`)
 
 새 기획 변경이 있으면 이 섹션에 기록.
 

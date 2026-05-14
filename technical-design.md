@@ -499,6 +499,7 @@ myfirstapp/
 | `GET` | `/api/meetings/search?q=...&from=...&to=...` | 검색 (전문 검색 포함) |
 | `PATCH` | `/api/meetings/{id}` | 재편집 저장 (partial update, 아래 요청 바디 참조) |
 | `DELETE` | `/api/meetings/{id}` | 회의록 완전 삭제 (meeting JSON + 병합 오디오 + export .md) |
+| `GET` | `/api/meetings/{id}/audio?format=webm\|mp3` | 회의 녹음 파일 다운로드. webm은 원본 스트림, mp3는 ffmpeg 온디맨드 변환 |
 | `POST` | `/api/meetings/{id}/blocks/{block_id}/split` | 재편집 중 블록 분할 |
 | `POST` | `/api/meetings/{id}/blocks/{block_id}/merge` | 재편집 중 블록 병합 |
 | `PATCH` | `/api/meetings/{id}/blocks/{block_id}` | 재편집 중 블록 텍스트 수정 |
@@ -564,9 +565,11 @@ myfirstapp/
   "success": true,
   "channel_name": "#team-meeting",
   "message_ts": "1713267000.000100",
-  "thread_ts": null
+  "thread_ts": null,
+  "md_attached": true
 }
 ```
+- `md_attached`: `attach_md=true`였을 때 .md 첨부 성공 여부. `true`(첨부됨) / `false`(파일을 찾지 못해 건너뜀) / `null`(요청에서 첨부 미요청). 검색 우선순위: 설정의 `export_path` → `EXPORT_DIR` fallback.
 
 **`GET /api/slack/channels/{id}/messages` 응답 바디** (서버에서 가공):
 ```json
