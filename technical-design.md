@@ -252,7 +252,7 @@ myfirstapp/
 | `input_mode` | `"realtime"` / `"upload"` |
 | `audio_chunks_dir` | 오디오 청크 파일들이 저장된 디렉토리 경로 |
 | `audio_chunk_count` | 현재까지 저장된 청크 수 |
-| `recording_gaps` | 녹음 재개 시 빈 구간 정보 (⏸ N분 경과 표시용) |
+| `recording_gaps` | 녹음 재개 시 빈 구간 정보 (⏸ N분 경과 표시용). 한 세션 다중 녹음 시 segment 경계 식별(`after_block_id`)·시간축 offset 산출(`gap_seconds`)에도 사용 — 4-5절 오디오 병합 R3 참조 |
 | `ai_tagging_skipped` | 사용자가 AI 태깅 스킵을 선택했는지 |
 
 ### 3-3. 완료된 회의 (Meeting) — 히스토리 저장
@@ -376,7 +376,7 @@ myfirstapp/
 | `POST` | `/api/sessions/{id}/resume` | 녹음 재개 (status → recording, gap 기록) |
 | `POST` | `/api/sessions/{id}/complete` | 세션 완료 → Meeting으로 변환 + JSON 히스토리 저장만. Slack 전송/.md 저장은 별도 API |
 | `POST` | `/api/sessions/{id}/export-md` | .md 파일 생성. 응답으로 .md 본문을 blob 스트림 반환 (브라우저 다운로드용). 백엔드는 동시에 `EXPORT_DIR`에 자체 보관 (Slack 첨부에 사용) |
-| `POST` | `/api/sessions/{id}/export-audio?format=webm\|mp3` | 녹음 파일 다운로드. 응답으로 오디오 blob 스트림 반환. webm은 원본, mp3는 ffmpeg 온디맨드 변환 |
+| `POST` | `/api/sessions/{id}/export-audio?format=webm\|mp3` | 녹음 파일 다운로드. 응답으로 오디오 blob 스트림 반환. webm은 원본, mp3는 ffmpeg 온디맨드 변환. **한 세션에 다중 녹음 segment가 있으면 통합 단일 파일로 병합 후 반환** (첫 호출 시 통합, 이후 캐시) — 4-5절 병합 알고리즘 참조 |
 | `DELETE` | `/api/sessions/{id}` | 세션 취소/삭제 |
 
 > **동시 세션 방지**: `POST /api/sessions` 호출 시 서버가 `status`가 `completed`가 아닌 기존 세션이 있는지 확인. 있으면 409 Conflict 반환. 즉 `recording`, `post_recording`, `processing`, `editing`, `summarizing` 상태 모두 활성 세션으로 간주하여 새 세션 생성을 차단.
@@ -500,7 +500,7 @@ myfirstapp/
 | `GET` | `/api/meetings/search?q=...&from=...&to=...` | 검색 (전문 검색 포함) |
 | `PATCH` | `/api/meetings/{id}` | 재편집 저장 (partial update, 아래 요청 바디 참조) |
 | `DELETE` | `/api/meetings/{id}` | 회의록 완전 삭제 (meeting JSON + 병합 오디오 + export .md) |
-| `GET` | `/api/meetings/{id}/audio?format=webm\|mp3` | 회의 녹음 파일 다운로드. webm은 원본 스트림, mp3는 ffmpeg 온디맨드 변환 |
+| `GET` | `/api/meetings/{id}/audio?format=webm\|mp3` | 회의 녹음 파일 다운로드. webm은 원본 스트림, mp3는 ffmpeg 온디맨드 변환. **다중 녹음 segment는 통합 단일 파일로 병합 후 반환** (4-5절 병합 알고리즘). 본 동작 도입 전 다중 녹음된 과거 회의도 동일 경로로 통합 복원 시도(보너스) |
 | `POST` | `/api/meetings/{id}/blocks/{block_id}/split` | 재편집 중 블록 분할 |
 | `POST` | `/api/meetings/{id}/blocks/{block_id}/merge` | 재편집 중 블록 병합 |
 | `PATCH` | `/api/meetings/{id}/blocks/{block_id}` | 재편집 중 블록 텍스트 수정 |
@@ -784,28 +784,64 @@ data/sessions/{session_id}/chunks/
   ...
 ```
 
-> **WebM 파일 무결성**: WebM 포맷은 헤더 + 클러스터 구조이므로 단순 바이너리 append 시 깨진 파일이 됨. 따라서 **청크를 개별 파일로 저장**하고, Whisper 처리 직전에 **ffmpeg로 병합**.
+> **WebM 파일 무결성 (핵심)**: `MediaRecorder.start(timeslice)`는 **단일 streamable WebM 스트림을 잘라낸 조각**들을 만든다 — 첫 청크에만 EBML 헤더(`1A 45 DF A3`)가 있고, 이후 청크는 헤더 없는 Cluster bytes다. 따라서 개별 `chunk_*.webm`은 독립 WebM 파일이 아니다. ffmpeg concat demuxer(`-c copy`든 재인코딩이든)는 이 구조를 재조립하지 못한다(첫 청크만 디코딩 → 약 5초/silent partial). **단일 스트림 복원의 정답은 raw byte concat**: MediaRecorder가 timeslice 없이 만들었을 원본 단일 스트림을 그대로 복구한다.
 
-### 오디오 병합 (Whisper 처리 전, 서버)
+### 오디오 병합 (Whisper 처리 전 + 다운로드 시, 서버)
+
+> **2026-05-15 재설계 (저장구조 1-C + 병합 2-A)**: 한 세션에서 두 번 이상 녹음(사용자 명시적 일시중단·재개)한 경우를 다룬다. 청크는 종전대로 **평탄 구조**(`chunks/chunk_*.webm`)로 저장한다 — `audio.py`의 청크 저장 로직은 **변경하지 않는다**. segment 경계는 클라이언트 신호가 아니라 **청크 바이너리의 EBML 시그니처**가 진실의 원천이다(같은 MediaRecorder 인스턴스 내에서는 `1A45DFA3`가 절대 재등장하지 않음 — WebM 표준 보장).
+
+**`merge_audio_chunks(chunks_dir, output_path)` 알고리즘:**
+
+1. `chunk_*.webm`을 인덱스 순 정렬.
+2. **segment 경계 검출**: 각 청크의 **첫 4바이트**를 읽어 `b'\x1a\x45\xdf\xa3'`인 청크 인덱스를 모은다. 이들이 각 녹음 segment의 시작점. (예: `[0, 34]` → segment 2개)
+   - 검출된 EBML이 1개(또는 chunk_000이 EBML이 아닌 비정상 케이스는 전체를 1 segment로 폴백) → **단일 segment 경로**.
+   - 검출된 EBML이 2개 이상 → **multi-segment 경로**.
+3. **단일 segment 경로** (기존 검증된 경로, 무변경): 전체 청크를 1MB 버퍼 streaming raw byte concat → `output_path`. `written == expected` 1:1 매칭 강제, 실패 시 partial unlink 후 raise.
+4. **multi-segment 경로**:
+   1. segment별로 청크를 raw byte concat → 각 segment를 자기완결적 valid WebM(`seg_0.webm`, `seg_1.webm`, …)으로 임시 생성.
+   2. ffmpeg **concat filter(재인코딩)**로 segment들을 단일 WebM으로 결합:
+      `ffmpeg -i seg_0.webm -i seg_1.webm -filter_complex "[0:a][1:a]concat=n=N:v=0:a=1" -c:a libopus output.webm`
+      (concat **demuxer**가 아니라 **filter** — 각 입력을 디코딩 후 단일 스트림으로 재인코딩하므로 EBML 경계 문제 없음)
+   3. 임시 `seg_*.webm` 정리.
+5. `.mp3` 요청 시: 위 결과 WebM을 `convert_to_mp3`(libmp3lame 192k)로 변환.
+
+**손상 자동 감지 (R6′ — 경로별 분기 필수):**
+
+| 경로 | 판정 기준 | 근거 |
+|------|----------|------|
+| 단일 segment | `merged 크기 < 청크 총합 × 0.5` → 손상 | raw concat은 1:1이라 정상본은 항상 통과 (기존 로직 유지) |
+| multi-segment | **크기 비교 폐기**. `ffprobe`로 결과 duration 측정 → `duration > 0` 그리고 `duration ≥ Σ(segment별 duration) × 0.8` 이면 정상 | concat filter는 재인코딩이라 크기가 청크 총합과 1:1이 아님 → 크기 기준을 그대로 쓰면 정상본을 손상으로 오판 → **무한 재병합 루프**. 재병합 비용이 크므로 자동 무효화는 최소화 |
+
+> `_is_merged_audio_corrupted`는 segment 개수로 분기. multi-segment에서 크기 기준을 적용하지 말 것 (위 무한 루프 함정).
+
+**시간축 정합 (R3 — segment 경계의 timestamp offset):**
+
+두 번째 이후 segment의 전사 블록·Whisper 세그먼트는 절대 시간축이 앞 segment 끝 이후로 밀려야 5단계 편집/히스토리에서 블록 순서가 어긋나지 않는다.
+
+- `session.recording_gaps[i]` = `{after_block_id, gap_seconds}` — 이미 기록되는 데이터. `after_block_id`로 segment 경계 블록을 식별.
+- segment N(0-기반)의 블록·Whisper offset = `Σ_{k<N} (segment_k 재생 길이 + recording_gaps[k].gap_seconds)`.
+- `merge_blocks`(아래 5절)는 이 offset이 **이미 적용된 통합 타임라인**에서 Web Speech ↔ Whisper를 매칭한다. Whisper는 segment별 audio 0 기준으로 나오므로 동일 offset을 가산한 뒤 병합.
+
 ```python
-# audio_service.py
-import subprocess
+# audio_service.py — 의사 명세 (상세 구현은 PLAN-DEV-HANDOFF-20260515.md)
+EBML_MAGIC = b"\x1a\x45\xdf\xa3"
 
-def merge_audio_chunks(chunks_dir: str, output_path: str):
-    chunk_files = sorted(Path(chunks_dir).glob("chunk_*.webm"))
-    
-    # ffmpeg concat demuxer 사용
-    list_file = chunks_dir / "chunks.txt"
-    with open(list_file, "w") as f:
-        for chunk in chunk_files:
-            f.write(f"file '{chunk.absolute()}'\n")
-    
-    subprocess.run([
-        "ffmpeg", "-f", "concat", "-safe", "0",
-        "-i", str(list_file),
-        "-c", "copy",  # 재인코딩 없이 병합 (빠름)
-        str(output_path)
-    ], check=True)
+def _segment_boundaries(chunk_files: list[Path]) -> list[int]:
+    """각 청크 첫 4바이트가 EBML 헤더인 인덱스 목록 = segment 시작점."""
+    starts = []
+    for i, f in enumerate(chunk_files):
+        with open(f, "rb") as fh:
+            if fh.read(4) == EBML_MAGIC:
+                starts.append(i)
+    return starts or [0]  # chunk_000이 비정상이면 전체 1 segment 폴백
+
+def merge_audio_chunks(chunks_dir: Path, output_path: Path) -> Path:
+    chunk_files = sorted(chunks_dir.glob("chunk_*.webm"))
+    # ... (없음/단일 청크/upload 폴백은 기존과 동일) ...
+    starts = _segment_boundaries(chunk_files)
+    if len(starts) <= 1:
+        return _raw_concat(chunk_files, output_path)      # 단일 segment (기존 검증 경로)
+    return _concat_segments(chunk_files, starts, output_path)  # multi-segment (raw concat → ffmpeg concat filter)
 ```
 
 ### Web Speech API (프론트엔드)
@@ -997,6 +1033,7 @@ def assemble_full_summary(metadata, claude_response, date_str, title):
 1. 사용자가 수정한 블록(`is_edited: true`)은 **무조건 보존** (잠금)
 2. 수정하지 않은 블록은 Whisper 결과로 교체
 3. 타임스탬프 기반 매칭: 블록의 `timestamp_start`~`timestamp_end` 구간으로 대응
+4. **다중 segment 시간축 (R3)**: 한 세션 다중 녹음 시, 두 번째 이후 segment의 Web Speech 블록과 Whisper 세그먼트는 `merge_blocks` 진입 **전에** segment offset(= 4-5절 R3 공식)을 가산하여 통합 타임라인으로 정렬한 뒤 매칭. offset 미적용 시 segment 경계에서 매칭이 어긋나 블록 순서 회귀 발생
 
 > **주의**: Web Speech 타임스탬프는 추정치이므로, 매칭 시 ±2초 허용 범위를 두고 가장 겹치는 구간이 큰 Whisper 세그먼트를 선택.
 
