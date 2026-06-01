@@ -6,6 +6,7 @@ from typing import Optional, List
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from config import SESSIONS_DIR, MEETINGS_DIR, EXPORT_DIR
@@ -296,13 +297,10 @@ def replace_all_blocks(session_id: str, req: BulkBlocksRequest):
         return {"ok": True, "block_count": len(session.blocks)}
 
 
-class ExportMdRequest(BaseModel):
-    export_path: Optional[str] = None
-
-
 @router.post("/{session_id}/export-md")
-def export_md(session_id: str, req: ExportMdRequest = ExportMdRequest()):
-    """Generate and save .md file from session summary + transcript."""
+def export_md(session_id: str):
+    """Generate .md file from session summary + transcript.
+    Saves to EXPORT_DIR (for Slack attachment) and streams the file back for browser download."""
     _validate_session_id(session_id)
     session = _load_session(session_id)
 
@@ -335,30 +333,29 @@ def export_md(session_id: str, req: ExportMdRequest = ExportMdRequest()):
 
     md_content = "\n".join(parts)
 
-    # Save to exports directory
+    # Save to exports directory (always — used by Slack attach lookup)
     title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
     date_str = session.metadata.date or datetime.now().strftime("%Y-%m-%d")
     filename = f"{title_safe}_{date_str.replace('-', '')}.md"
-    if req.export_path:
-        export_dir = Path(req.export_path)
-    else:
-        export_dir = EXPORT_DIR
-    export_file = export_dir / filename
+    export_file = EXPORT_DIR / filename
     export_file.parent.mkdir(parents=True, exist_ok=True)
     export_file.write_text(md_content, encoding="utf-8")
 
-    return {"filename": filename, "content": md_content}
+    return FileResponse(
+        str(export_file),
+        media_type="text/markdown; charset=utf-8",
+        filename=filename,
+    )
 
 
 class ExportAudioRequest(BaseModel):
-    export_path: Optional[str] = None
     format: str = "webm"
 
 
 @router.post("/{session_id}/export-audio")
-def export_session_audio(session_id: str, req: ExportAudioRequest):
-    """Save the session's recorded audio (.webm or .mp3) to a user folder.
-    Used by the 7단계 send/save flow before the meeting JSON exists."""
+def export_session_audio(session_id: str, req: ExportAudioRequest = ExportAudioRequest()):
+    """Save the session's recorded audio (.webm or .mp3) to EXPORT_DIR and stream
+    it back for browser download. Used by the 7단계 send/save flow."""
     _validate_session_id(session_id)
     if req.format not in ("webm", "mp3"):
         raise HTTPException(status_code=400, detail="format must be 'webm' or 'mp3'")
@@ -376,19 +373,24 @@ def export_session_audio(session_id: str, req: ExportAudioRequest):
     date_str = (session.metadata.date or '').replace('-', '')
     filename = f"{title_safe}_{date_str}.{req.format}"
 
-    export_dir = Path(req.export_path) if req.export_path else EXPORT_DIR
-    export_dir.mkdir(parents=True, exist_ok=True)
-    dst = export_dir / filename
+    EXPORT_DIR.mkdir(parents=True, exist_ok=True)
+    dst = EXPORT_DIR / filename
 
     if req.format == "webm":
         _shutil.copyfile(str(audio_src), str(dst))
+        media_type = "audio/webm"
     else:
         try:
             convert_to_mp3(audio_src, dst)
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"mp3 변환 실패: {e}")
+        media_type = "audio/mpeg"
 
-    return {"success": True, "file_path": str(dst)}
+    return FileResponse(
+        str(dst),
+        media_type=media_type,
+        filename=filename,
+    )
 
 
 @router.delete("/{session_id}")

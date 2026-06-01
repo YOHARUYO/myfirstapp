@@ -25,7 +25,6 @@ interface AppSettings {
   claude: { api_key: string; summary_model: string; tagging_model: string };
   whisper: { model: string };
   slack_greeting: string;
-  export_path: string;
 }
 
 function SortableTemplateItem({ tpl, onEdit, onDelete }: { tpl: Template; onEdit: () => void; onDelete: () => void }) {
@@ -455,39 +454,6 @@ export default function Settings() {
             <button onClick={handleSaveGreeting}
               className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">
               저장
-            </button>
-          </div>
-        </div>
-      </section>
-
-      {/* Storage */}
-      <section className="mt-20">
-        <h2 className="text-[28px] font-bold text-text mb-6">저장</h2>
-        <div className="bg-bg-subtle rounded-xl p-4">
-          <p className="text-[15px] font-medium text-text">기본 저장 경로</p>
-          <div className="mt-2 flex items-center gap-2">
-            <span className="text-xs text-text-secondary truncate">{settings?.export_path || 'exports/'}</span>
-            <button
-              onClick={async () => {
-                try {
-                  if ('showDirectoryPicker' in window) {
-                    const handle = await (window as any).showDirectoryPicker();
-                    await api.patch('/settings', { export_path: handle.name });
-                    setSettings((prev) => prev ? { ...prev, export_path: handle.name } : prev);
-                    showToast('저장 경로 변경됨');
-                  } else {
-                    const path = prompt('저장 경로를 입력하세요', settings?.export_path || '');
-                    if (path !== null) {
-                      await api.patch('/settings', { export_path: path });
-                      setSettings((prev) => prev ? { ...prev, export_path: path } : prev);
-                      showToast('저장 경로 변경됨');
-                    }
-                  }
-                } catch {}
-              }}
-              className="text-xs text-primary hover:text-primary-hover cursor-pointer shrink-0"
-            >
-              폴더 선택
             </button>
           </div>
         </div>

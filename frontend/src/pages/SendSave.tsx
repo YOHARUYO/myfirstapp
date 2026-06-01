@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
-  Send, Download, Check, AlertCircle, ChevronDown, ChevronUp,
-  Loader2, Home, Clock, Trash2, MessageSquare, Paperclip, Bot, User,
+  Send, Check, AlertCircle, ChevronDown, ChevronUp,
+  Loader2, Home, Clock, MessageSquare, Paperclip, Bot, User,
 } from 'lucide-react';
 import WizardLayout from '../components/wizard/WizardLayout';
 import Toast from '../components/common/Toast';
@@ -30,7 +30,6 @@ export default function SendSave() {
   const [saveMd, setSaveMd] = useState(true);
   const [saveAudio, setSaveAudio] = useState(false);
   const [audioFormat, setAudioFormat] = useState<'webm' | 'mp3'>('webm');
-  const [exportPath, setExportPath] = useState('');
 
   // Slack options
   const [channels, setChannels] = useState<SlackChannel[]>([]);
@@ -72,10 +71,29 @@ export default function SendSave() {
     if (session) {
       getSession(session.session_id).then(setSession).catch(() => {});
     }
-    api.get('/settings').then((res) => {
-      setExportPath(res.data.export_path || 'exports/');
-    }).catch(() => {});
   }, [setStep]);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Trigger a browser download for a POST endpoint that returns a FileResponse.
+  // Parses Content-Disposition for filename; falls back to a sensible default.
+  const downloadBlobFromPost = async (url: string, body: unknown, fallbackName: string): Promise<string> => {
+    const res = await api.post(url, body, { responseType: 'blob' });
+    const blob = res.data as Blob;
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objectUrl;
+    const dispo = (res.headers['content-disposition'] as string) || '';
+    const utf8Match = dispo.match(/filename\*=UTF-8''([^;]+)/i);
+    const plainMatch = dispo.match(/filename="?([^";]+)"?/i);
+    const filename = utf8Match
+      ? decodeURIComponent(utf8Match[1])
+      : (plainMatch ? plainMatch[1] : fallbackName);
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objectUrl);
+    return filename;
+  };
 
   // Load channels
   useEffect(() => {
@@ -148,33 +166,37 @@ export default function SendSave() {
     setMissingModal(false);
     setExecuting(true);
 
-    // 1. .md export 먼저 (Slack 첨부에 필요)
+    // 1. .md export 먼저 (백엔드 EXPORT_DIR에 저장 → Slack 첨부 + 브라우저 다운로드)
     if (saveMd) {
       setMdStatus('loading');
       try {
-        const res = await api.post(`${apiBase}/${session.session_id}/export-md`, { export_path: exportPath || undefined });
+        const filename = await downloadBlobFromPost(
+          `${apiBase}/${session.session_id}/export-md`,
+          {},
+          'meeting.md',
+        );
         setMdStatus('success');
-        setMdResult(`${res.data.filename} 저장 완료`);
+        setMdResult(`${filename} 다운로드 완료`);
       } catch (e: any) {
         setMdStatus('error');
-        setMdResult(e?.response?.data?.detail || '.md 저장 실패');
+        setMdResult(e?.response?.data?.detail || '.md 다운로드 실패');
       }
     }
 
-    // 1.5 녹음 파일 저장 (Slack 전송 전)
+    // 1.5 녹음 파일 다운로드 (Slack 전송 전)
     if (saveAudio) {
       setAudioStatus('loading');
       try {
-        const res = await api.post(`${apiBase}/${session.session_id}/export-audio`, {
-          export_path: exportPath || undefined,
-          format: audioFormat,
-        });
+        const filename = await downloadBlobFromPost(
+          `${apiBase}/${session.session_id}/export-audio`,
+          { format: audioFormat },
+          `recording.${audioFormat}`,
+        );
         setAudioStatus('success');
-        const fileName = String(res.data.file_path).split(/[\\/]/).pop() || `녹음.${audioFormat}`;
-        setAudioResult(`${fileName} 저장 완료`);
+        setAudioResult(`${filename} 다운로드 완료`);
       } catch (e: any) {
         setAudioStatus('error');
-        setAudioResult(e?.response?.data?.detail || '녹음 파일 저장 실패');
+        setAudioResult(e?.response?.data?.detail || '녹음 파일 다운로드 실패');
       }
     }
 
@@ -210,7 +232,7 @@ export default function SendSave() {
           deleted_at: null,
         };
         if (saveMd && result.md_attached === false) {
-          showToast('.md 파일을 찾을 수 없어 첨부 없이 전송되었습니다. 저장 경로 설정을 확인해주세요.');
+          showToast('.md 파일이 백엔드에 생성되지 않아 첨부 없이 전송되었습니다. 잠시 후 재전송을 시도해주세요.');
         }
       } catch (e: any) {
         setSlackStatus('error');
@@ -297,7 +319,7 @@ export default function SendSave() {
                           setSlackResult(`${result.channel_name} 전송 완료`);
                           setSlackMessageTs(result.message_ts);
                           if (saveMd && result.md_attached === false) {
-                            showToast('.md 파일을 찾을 수 없어 첨부 없이 전송되었습니다. 저장 경로 설정을 확인해주세요.');
+                            showToast('.md 파일이 백엔드에 생성되지 않아 첨부 없이 전송되었습니다. 잠시 후 재전송을 시도해주세요.');
                           }
                         } catch (e: any) {
                           setSlackStatus('error');
@@ -326,16 +348,16 @@ export default function SendSave() {
                   onClick={async () => {
                     setAudioStatus('loading');
                     try {
-                      const res = await api.post(`${apiBase}/${session!.session_id}/export-audio`, {
-                        export_path: exportPath || undefined,
-                        format: audioFormat,
-                      });
+                      const filename = await downloadBlobFromPost(
+                        `${apiBase}/${session!.session_id}/export-audio`,
+                        { format: audioFormat },
+                        `recording.${audioFormat}`,
+                      );
                       setAudioStatus('success');
-                      const fileName = String(res.data.file_path).split(/[\\/]/).pop() || `녹음.${audioFormat}`;
-                      setAudioResult(`${fileName} 저장 완료`);
+                      setAudioResult(`${filename} 다운로드 완료`);
                     } catch (e: any) {
                       setAudioStatus('error');
-                      setAudioResult(e?.response?.data?.detail || '녹음 파일 저장 실패');
+                      setAudioResult(e?.response?.data?.detail || '녹음 파일 다운로드 실패');
                     }
                   }}
                   className="ml-auto px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
@@ -361,12 +383,16 @@ export default function SendSave() {
                     onClick={async () => {
                       setMdStatus('loading');
                       try {
-                        const res = await api.post(`${apiBase}/${session!.session_id}/export-md`, { export_path: exportPath || undefined });
+                        const filename = await downloadBlobFromPost(
+                          `${apiBase}/${session!.session_id}/export-md`,
+                          {},
+                          'meeting.md',
+                        );
                         setMdStatus('success');
-                        setMdResult(`${res.data.filename} 저장 완료`);
+                        setMdResult(`${filename} 다운로드 완료`);
                       } catch (e: any) {
                         setMdStatus('error');
-                        setMdResult(e?.response?.data?.detail || '.md 저장 실패');
+                        setMdResult(e?.response?.data?.detail || '.md 다운로드 실패');
                       }
                     }}
                     className="ml-auto px-3 py-1 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer"
@@ -569,7 +595,7 @@ export default function SendSave() {
           )}
         </div>
 
-        {/* .md save section */}
+        {/* .md 다운로드 section */}
         <div className="mt-8 bg-bg-subtle rounded-xl p-6">
           <div className="flex items-center gap-3 mb-4">
             <input
@@ -578,50 +604,33 @@ export default function SendSave() {
               onChange={(e) => setSaveMd(e.target.checked)}
               className="w-4 h-4 rounded cursor-pointer"
             />
-            <h2 className="text-[28px] font-bold text-text">로컬 저장</h2>
+            <h2 className="text-[28px] font-bold text-text">.md 다운로드</h2>
           </div>
           {saveMd && (
             <div className="ml-7 mt-2">
-              <p className="text-sm text-text-secondary">.md 파일로 저장됩니다</p>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="text-xs text-text-tertiary shrink-0">경로:</span>
-                <span className="text-xs text-text-secondary truncate">{exportPath || 'exports/'}</span>
-                <button
-                  onClick={async () => {
-                    try {
-                      if ('showDirectoryPicker' in window) {
-                        const handle = await (window as any).showDirectoryPicker();
-                        setExportPath(handle.name);
-                      } else {
-                        const path = prompt('저장 경로를 입력하세요', exportPath);
-                        if (path !== null) setExportPath(path);
-                      }
-                    } catch {}
-                  }}
-                  className="text-xs text-primary hover:text-primary-hover cursor-pointer shrink-0"
-                >
-                  폴더 선택
-                </button>
-              </div>
+              <p className="text-sm text-text-secondary">브라우저 다운로드 폴더에 저장됩니다</p>
             </div>
           )}
         </div>
 
-        {/* 녹음 파일 저장 section */}
+        {/* 녹음 파일 다운로드 section */}
         <div className="mt-8 bg-bg-subtle rounded-xl p-6">
-          <div className="flex items-center gap-3 mb-4">
-            <input
-              type="checkbox"
-              checked={saveAudio}
-              onChange={(e) => setSaveAudio(e.target.checked)}
-              className="w-4 h-4 rounded cursor-pointer"
-            />
-            <h2 className="text-[28px] font-bold text-text">녹음 파일 저장</h2>
+          {/* Header row — wraps on mobile so the format segment drops below the title (~375px safety) */}
+          <div className="flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-y-3 sm:gap-x-3 mb-4">
+            <label className="flex items-center gap-3 whitespace-nowrap cursor-pointer">
+              <input
+                type="checkbox"
+                checked={saveAudio}
+                onChange={(e) => setSaveAudio(e.target.checked)}
+                className="w-4 h-4 rounded cursor-pointer shrink-0"
+              />
+              <h2 className="text-[28px] font-bold text-text">녹음 파일 다운로드</h2>
+            </label>
             {saveAudio && (
-              <div className="ml-auto flex gap-1 bg-bg rounded-lg p-1">
+              <div className="sm:ml-auto flex gap-1 bg-bg rounded-lg p-1 self-start sm:self-auto">
                 <button
                   onClick={() => setAudioFormat('webm')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer whitespace-nowrap ${
                     audioFormat === 'webm' ? 'bg-primary text-bg' : 'text-text-secondary hover:text-text'
                   }`}
                 >
@@ -629,7 +638,7 @@ export default function SendSave() {
                 </button>
                 <button
                   onClick={() => setAudioFormat('mp3')}
-                  className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer ${
+                  className={`px-3 py-1 text-xs font-medium rounded transition-colors cursor-pointer whitespace-nowrap ${
                     audioFormat === 'mp3' ? 'bg-primary text-bg' : 'text-text-secondary hover:text-text'
                   }`}
                 >
@@ -641,7 +650,7 @@ export default function SendSave() {
           {saveAudio && (
             <div className="ml-7 mt-2">
               <p className="text-sm text-text-secondary">
-                .md 파일과 같은 폴더에 저장됩니다 ({audioFormat === 'mp3' ? 'ffmpeg 변환' : '원본'})
+                브라우저 다운로드 폴더에 저장됩니다 ({audioFormat === 'mp3' ? 'ffmpeg 변환' : '원본'})
               </p>
             </div>
           )}

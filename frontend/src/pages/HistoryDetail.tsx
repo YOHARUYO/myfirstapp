@@ -313,98 +313,113 @@ export default function HistoryDetail() {
         )}
       </div>
 
-      {/* Action buttons */}
-      <div className="mt-12 flex gap-3">
-        <button
-          onClick={() => {
-            if (!meeting) return;
-            const sessionLike: Session = {
-              session_id: meeting.meeting_id,
-              status: 'editing',
-              created_at: meeting.created_at,
-              input_mode: 'realtime',
-              metadata: meeting.metadata,
-              audio_chunks_dir: '',
-              audio_chunk_count: 0,
-              blocks: meeting.blocks,
-              recording_gaps: [],
-              ai_tagging_skipped: false,
-              summary_markdown: meeting.summary_markdown,
-              action_items: meeting.action_items,
-              keywords: meeting.keywords,
-            };
-            useSessionStore.getState().setSession(sessionLike);
-            useSessionStore.getState().setEditMode('meeting', meeting.meeting_id);
-            navigate('/editing');
-          }}
-          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
-        >
-          <Pencil size={18} />
-          재편집
-        </button>
-        <button
-          onClick={() => {
-            if (!meeting) return;
-            const sessionLike: Session = {
-              session_id: meeting.meeting_id,
-              status: 'summarizing',
-              created_at: meeting.created_at,
-              input_mode: 'realtime',
-              metadata: meeting.metadata,
-              audio_chunks_dir: '',
-              audio_chunk_count: 0,
-              blocks: meeting.blocks,
-              recording_gaps: [],
-              ai_tagging_skipped: false,
-              summary_markdown: meeting.summary_markdown,
-              action_items: meeting.action_items,
-              keywords: meeting.keywords,
-            };
-            useSessionStore.getState().setSession(sessionLike);
-            useSessionStore.getState().setEditMode('meeting', meeting.meeting_id);
-            navigate('/send');
-          }}
-          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
-        >
-          <Send size={18} />
-          재전송
-        </button>
-        <button
-          onClick={async () => {
-            try {
-              const res = await api.post(`/meetings/${meeting.meeting_id}/export-md`);
-              // Blob 다운로드
-              const blob = new Blob([res.data.content], { type: 'text/markdown;charset=utf-8' });
-              const url = URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url;
-              a.download = res.data.filename;
-              document.body.appendChild(a);
-              a.click();
-              document.body.removeChild(a);
-              URL.revokeObjectURL(url);
-              showToast(`${res.data.filename} 다운로드 완료`);
-            } catch { showToast('.md 생성에 실패했습니다'); }
-          }}
-          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
-        >
-          <Download size={18} />
-          .md 다운로드
-        </button>
-        <button
-          onClick={() => setAudioModalOpen(true)}
-          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
-        >
-          <Music size={18} />
-          녹음 다운로드
-        </button>
-        <button
-          onClick={() => setDeleteMeetingModal(true)}
-          className="flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-recording bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
-        >
-          <Trash2 size={18} />
-          삭제
-        </button>
+      {/* Action buttons — 3 groups (primary / secondary downloads / destructive) with flex-wrap for mobile */}
+      <div className="mt-12 flex flex-wrap items-center gap-x-6 gap-y-3">
+        {/* Primary actions */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => {
+              if (!meeting) return;
+              const sessionLike: Session = {
+                session_id: meeting.meeting_id,
+                status: 'editing',
+                created_at: meeting.created_at,
+                input_mode: 'realtime',
+                metadata: meeting.metadata,
+                audio_chunks_dir: '',
+                audio_chunk_count: 0,
+                blocks: meeting.blocks,
+                recording_gaps: [],
+                ai_tagging_skipped: false,
+                summary_markdown: meeting.summary_markdown,
+                action_items: meeting.action_items,
+                keywords: meeting.keywords,
+              };
+              useSessionStore.getState().setSession(sessionLike);
+              useSessionStore.getState().setEditMode('meeting', meeting.meeting_id);
+              navigate('/editing');
+            }}
+            className="whitespace-nowrap flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+          >
+            <Pencil size={18} />
+            재편집
+          </button>
+          <button
+            onClick={() => {
+              if (!meeting) return;
+              const sessionLike: Session = {
+                session_id: meeting.meeting_id,
+                status: 'summarizing',
+                created_at: meeting.created_at,
+                input_mode: 'realtime',
+                metadata: meeting.metadata,
+                audio_chunks_dir: '',
+                audio_chunk_count: 0,
+                blocks: meeting.blocks,
+                recording_gaps: [],
+                ai_tagging_skipped: false,
+                summary_markdown: meeting.summary_markdown,
+                action_items: meeting.action_items,
+                keywords: meeting.keywords,
+              };
+              useSessionStore.getState().setSession(sessionLike);
+              useSessionStore.getState().setEditMode('meeting', meeting.meeting_id);
+              navigate('/send');
+            }}
+            className="whitespace-nowrap flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+          >
+            <Send size={18} />
+            재전송
+          </button>
+        </div>
+        {/* Secondary (downloads) */}
+        <div className="flex items-center gap-2">
+          <button
+            onClick={async () => {
+              try {
+                // Backend returns FileResponse — read as blob and parse Content-Disposition for filename.
+                const res = await api.post(`/meetings/${meeting.meeting_id}/export-md`, {}, { responseType: 'blob' });
+                const blob = res.data as Blob;
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                const dispo = (res.headers['content-disposition'] as string) || '';
+                const utf8Match = dispo.match(/filename\*=UTF-8''([^;]+)/i);
+                const plainMatch = dispo.match(/filename="?([^";]+)"?/i);
+                const filename = utf8Match
+                  ? decodeURIComponent(utf8Match[1])
+                  : (plainMatch ? plainMatch[1] : 'meeting.md');
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+                showToast(`${filename} 다운로드 완료`);
+              } catch { showToast('.md 생성에 실패했습니다'); }
+            }}
+            className="whitespace-nowrap flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+          >
+            <Download size={18} />
+            .md 다운로드
+          </button>
+          <button
+            onClick={() => setAudioModalOpen(true)}
+            className="whitespace-nowrap flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+          >
+            <Music size={18} />
+            녹음 다운로드
+          </button>
+        </div>
+        {/* Destructive */}
+        <div className="flex items-center">
+          <button
+            onClick={() => setDeleteMeetingModal(true)}
+            className="whitespace-nowrap flex items-center gap-2 px-5 py-3 text-[15px] font-semibold text-recording bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer"
+          >
+            <Trash2 size={18} />
+            삭제
+          </button>
+        </div>
       </div>
 
       {/* Edit Slack message modal */}

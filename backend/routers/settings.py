@@ -80,7 +80,6 @@ class UpdateSettingsRequest(BaseModel):
     claude: Optional[UpdateClaudeSettings] = None
     whisper: Optional[UpdateWhisperSettings] = None
     slack_greeting: Optional[str] = None
-    export_path: Optional[str] = None
     summary_template: Optional[str] = None
     mic_sensitivity: Optional[float] = None
 

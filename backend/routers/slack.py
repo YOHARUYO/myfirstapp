@@ -277,27 +277,14 @@ def send_slack_message(req: SlackSendRequest):
         result = client.chat_postMessage(**kwargs)
         message_ts = result.get("ts", "")
 
-        # Upload .md file if requested
-        # 검색 우선순위: settings.json의 export_path → EXPORT_DIR (fallback)
+        # Upload .md file if requested — 검색은 EXPORT_DIR만 (백엔드가 항상 여기에 저장)
         md_attached = False
         if req.attach_md:
             title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
             date_str = (session.metadata.date or '').replace('-', '')
             filename = f"{title_safe}_{date_str}.md"
-
-            candidates: list[Path] = []
-            if settings_path.exists():
-                try:
-                    s = _json.loads(settings_path.read_text(encoding="utf-8"))
-                    user_export = s.get("export_path", "") or ""
-                    if user_export:
-                        candidates.append(Path(user_export) / filename)
-                except Exception:
-                    pass
-            candidates.append(EXPORT_DIR / filename)
-
-            md_file = next((p for p in candidates if p.exists()), None)
-            if md_file is not None:
+            md_file = EXPORT_DIR / filename
+            if md_file.exists():
                 client.files_upload_v2(
                     channel=req.channel_id,
                     file=str(md_file),
