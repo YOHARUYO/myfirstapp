@@ -168,26 +168,101 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ---
 
-## 8. 현재 구현 완료 항목 (2026-05-07 기준)
+## 7-A. 외부 시연 운영 절차 (Cloudflare Quick Tunnel)
 
-> **마지막 업데이트**: 2026-05-14 (문서 정합성 정리)
-> **최신 커밋**: `e262762` (녹음 파일 내보내기 + #전송됨 태그 누락 + textarea ring 잘림) — origin/master push 완료
-> **최근 커밋 4건 (모두 origin push 완료):**
+> 도입 배경: 2026-05-29 ngrok 무료 플랜 bandwidth 차단으로 MacBook 외부 접속이 막힘. 소유 도메인 없이 즉시 사용 가능한 Cloudflare Quick Tunnel로 교체.
+
+### 인프라 개요
+
+- **터널 도구**: `cloudflared tunnel --url http://localhost:5173` → 매 실행마다 임시 `*.trycloudflare.com` URL 발급
+- **인증**: HTTP Basic Auth (Vite dev server + 백엔드 양쪽). Quick Tunnel은 Cloudflare Access 미지원(유료)이라 앱 자체에 인증 추가
+- **자격증명 위치**: `backend/.env`의 `BASIC_AUTH_USER` / `BASIC_AUTH_PASSWORD`. 백엔드와 Vite가 같은 값을 사용 (브라우저는 같은 origin이라 한 번 입력하면 양쪽 통과)
+- **인증 예외**: `/api/health` (cloudflared 헬스체크용, 반환값은 `{"status":"ok"}`뿐이라 정보 노출 0)
+
+### 사전 1회성 셋업
+
+```powershell
+# cloudflared 설치 (Windows)
+winget install --id Cloudflare.cloudflared
+# 또는 https://github.com/cloudflare/cloudflared/releases 에서 msi
+
+# Windows 절전 차단 (권장)
+powercfg -change standby-timeout-ac 0
+```
+
+### 회의 30분 전 기동 (터미널 3개)
+
+> 2026-05-29: `vite.config.ts`가 `backend/.env`를 직접 읽도록 보조 변경 적용 → 매번 환경 변수 export 불필요. backend도 dotenv가 같은 파일을 자동 로드. `backend/.env`가 단일 source of truth.
+
+```cmd
+:: 터미널 1 — 백엔드
+cd /d "C:\Users\rsa4635\Desktop\coding\project\myfirstapp\backend"
+uvicorn main:app --reload --port 8000
+
+:: 터미널 2 — 프론트
+cd /d "C:\Users\rsa4635\Desktop\coding\project\myfirstapp\frontend"
+npm run dev
+
+:: 터미널 3 — cloudflared
+cloudflared tunnel --url http://localhost:5173
+:: 출력된 https://xxx-yyy-zzz.trycloudflare.com 을 MacBook에 공유
+```
+
+### 회의 종료
+
+- 터미널 3 Ctrl+C → 외부 노출 즉시 차단
+- 터미널 1·2는 로컬 사용 계속 가능 (로컬도 Basic Auth 프롬프트 1회, 브라우저 캐싱 후 무감)
+
+### 주의
+
+- URL은 cloudflared 재기동할 때마다 바뀜 — 회의 직전 새 URL 공유 필수
+- 외부 노출은 cloudflared 실행 중에만. 회의 외 시간에는 띄우지 말 것
+- 환경 변수 누락 시 백엔드(KeyError) / Vite(throw)가 기동 실패 — 의도된 안전장치 (무인증 노출 차단)
+
+---
+
+## 8. 현재 구현 완료 항목 (2026-05-29 기준)
+
+> **마지막 업데이트**: 2026-05-29 (cloudflare + Basic Auth 인프라 변경 개발 반영 완료 + 자동/로컬/외부 접속 검증 통과. 다음 주 실회의 검증만 대기)
+> **최신 커밋**: `73109e9` (05-14 기획 결정 + 핸드오프 2건) — origin/master push 완료
+> **Working tree 미커밋**: 05-14 작업분(개발/검수, 커밋 대기) + 05-15 기획 작업분 + **05-29 인프라 변경 (코드 + 문서 + 메모리, 커밋 대기)**. 05-29 추가: `backend/main.py`(Basic Auth 미들웨어) + `frontend/vite.config.ts`(Basic Auth 미들웨어 + backend/.env 자동 로드) + `backend/.env`(자격증명 2변수) + `HANDOVER.md`(7-A 신규 절 + 8/10절) + 메모리 3건(ngrok 삭제, cloudflared 신규, MEMORY 인덱스). 신규 untracked reports: `QA-TO-PLAN-NGROK-REPLACE-20260529.md`(검수), `PLAN-DEV-HANDOFF-20260529.md`(기획), `DEV-REPORT-20260529.md`(개발), `PLAN-REPORT-20260529.md`(기획), `PLAN-SESSION-RESUME-20260529.md`(기획). 05-15분: `decisions.md` / `technical-design.md` + 3개 reports. 05-14분: backend 5 + `audio_service.py` + frontend 3 modified, QA-FIX 2건 + DEV/QA/PLAN-REPORT-20260514 + DEV-SESSION-RESUME-20260515 untracked
+> **다음 개발 세션이 먼저 읽을 것**: `reports/DEV-SESSION-RESUME-20260515.md` — 첫 행동 / 검증 시나리오 / 권장 분할 커밋 메시지 / 잔여 미결 모두 정리됨
+> **최근 커밋 5건 (모두 origin push 완료):**
+> - `73109e9` — 05-14 기획 결정 + 핸드오프 2건 (저장 경로 폐기 + UI 회귀 보정)
+> - `aa83de5` — 05-07 미커밋 산출물 + e262762 반영 표시 정정 (문서 동기화)
 > - `e262762` — 녹음 파일 내보내기 신규 기능 + #전송됨 태그 누락 + textarea ring 잘림 (PLAN-DEV-HANDOFF-20260507 + -2)
 > - `69948e7` — 30분+ 녹음 session.json 손상 근본 수정 (atomic write + 공통 threading.Lock + 자동 복구)
 > - `cd8f3d9` — Slack MD 첨부 경로 통일 (settings.json export_path 우선 검색 + md_attached 토스트)
-> - `5570ff6` — .gitignore에 backend/results/ 추가
 >
 > **검증 완료 (검수 세션 통과):**
-> - QA-SESSION-RACE: 200 worker 동시 append 시뮬 통과 (errors 0 / JSON valid / tempfile 잔여 0) + 손상돼있던 a357f55c 세션 자동 복구 성공 (166블록 무손실, status="completed")
-> - QA-SLACK-MD-PATH: 사용자 시나리오 1(오늘자 실험용 회의 재전송) 직접 확인 → Slack 채널에 .md 첨부 정상
-> - 27분 실사용 녹음 정상
+> - QA-SESSION-RACE: 200 worker 동시 append 시뮬 + **120분 실회의 통과** → race·응답 지연 종결 확정. 2차 성능 수정(E/F/G) 조건 미충족 → 폐기
+> - QA-SLACK-MD-PATH: 사용자 시나리오 1 직접 확인 → Slack 채널에 .md 첨부 정상
+> - 모바일 회귀(히스토리 5버튼 + 7단계 체크박스): 기획 결정 + working tree 반영 (사용자 직접 검증 필요)
+> - **🔴 QA-AUDIO-MERGE-LOSS 1+2 (raw binary concat): 10번째 검수 세션(05-15) 통과 확정** — 코드 정합성 명세 100% 일치 + `session_20260515_0125c17a` 디스크 raw concat 1:1 매칭(6,643,109 bytes)·타임라인 정상 + **PM 맥북 내장 마이크 30분 실회의 정상 확인**. 부수 발견: 마이크 미지원 데스크탑의 영상 우회 검증은 입력 자체가 무음(raw concat 무관, chunk_000 단독도 -59.5dB) — 운영 환경 무영향. 상세 `reports/QA-REPORT-20260515.md`
 >
-> **상태**: 모든 Critical 이슈 종결. 운영 사용 가능. 다음 검증 포인트는 30~60분 실회의 1회의 응답 지연 체감 여부 + e262762 신규 기능 실사용 시연.
+> **✅ 05-14 개발 세션 반영 완료 (working tree, 커밋 대기):**
+> - PLAN-DEV-HANDOFF-20260514 (저장 경로 폐기): 8건 — 백엔드 4종 export 엔드포인트를 `FileResponse`로 통일, `export_path` 모델·요청·UI 전면 제거, SendSave에 `downloadBlobFromPost` 헬퍼 도입
+> - PLAN-DEV-HANDOFF-20260514-2 (UI 회귀): 2건 — HistoryDetail 하단 버튼 3그룹 + `flex-wrap`, SendSave 녹음 카드 모바일 수직 스택
+> - 회귀 fix 부수 1건: HistoryDetail의 `.md 다운로드`를 blob+Content-Disposition 패턴으로 통일 (백엔드 FileResponse 전환 회귀 차단)
+> - **🔴 QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2 (raw binary concat 전면 교체)**: `merge_audio_chunks`에서 ffmpeg subprocess 완전 제거, 1MB 버퍼 streaming + `written == expected` 1:1 매칭 강제 + 실패 시 partial 자동 unlink. `_is_merged_audio_corrupted`는 `merged < total*0.5` 단일 조건으로 단순화. **검수 통과 확정 (05-15) — 디스크 1:1 매칭 + PM 맥북 30분 실회의 정상**
+>
+> **✅ 05-29 개발 세션 반영 완료 (working tree, 커밋 대기)**:
+> - PLAN-DEV-HANDOFF-20260529 (cloudflared + Basic Auth): 7건 — `backend/main.py` `basic_auth_middleware`(secrets.compare_digest + `/api/health` 예외 + 누락 시 KeyError 기동 실패), `frontend/vite.config.ts` `configureServer` Basic Auth 미들웨어, `backend/.env` 자격증명(`secrets.token_urlsafe(16)` 22자), HANDOVER 7-A 신규 절(CMD 3터미널), 메모리 3건(ngrok 삭제 + cloudflared 신규 + MEMORY 인덱스). 단독 커밋 권장
+> - **A 보조 변경(개발 단계 PM 결정 갱신)**: `vite.config.ts`가 `backend/.env`를 fs로 직접 로드 → 매 회의 환경변수 export 절차 제거 + 비밀번호 터미널 history 미잔여. backend(dotenv)/frontend(fs) 양쪽이 같은 `backend/.env` 단일 source of truth
+> - **검증 완료 (자동 + 로컬 + cloudflare 외부 접속)**: §5.3 #8·#10·#11 curl probe 통과 / §5.1 #1·#2·#3 로컬 회귀 + 기존 기능(녹음/다운로드/Slack/히스토리/설정) / §5.2 #4 MacBook 외부 접속 → Basic Auth → 홈 렌더 통과
+>
+> **다음 검수 액션 (대기)**:
+> - ✅ QA-AUDIO-MERGE-LOSS 1+2 검수 통과 확정 (05-15) — 코드 정합성 + 디스크 1:1 매칭 + PM 맥북 30분 실회의 정상. 추가 검수 불필요
+> - PLAN-DEV-HANDOFF-20260515(resume·복구 audio 재설계) 개발 반영 후 검수 (저장구조 1-C + 병합 2-A 동작 검증)
+> - **PLAN-DEV-HANDOFF-20260529: 자동/로컬/외부 접속 통과. 다음 주 1시간 실회의로 §5.2 #5~7(WS chunk 누락 0건 + 다운로드 50MB+ + Slack/MD) + §5.4 #12 종료 후 차단 PM 자체 검증 예정** — 결과에 따라 검수 추가 진행 여부 결정
+> - 잔여 🟡 5건 재배치 (Part D 2 / 환경 의존 2 / 미리보기 1)
+> - resume·복구 audio 한계 (한 세션 두 번 녹음 시 EBML 헤더 중복) → **기획 결정 완료 (05-15)**: 저장구조 1-C + 병합 2-A. `reports/PLAN-DEV-HANDOFF-20260515.md` 작성 → 개발 반영 대기 (🔴 High, resume 자주 발생). QA-FIX-3는 본 핸드오프로 대체(신규 동작+결함 혼합이라 PLAN-DEV-HANDOFF가 적합).
+>
+> **상태**: ✅ 05-14 운영 차단 🔴 1건(녹음 99.93% 손실) **검수 통과 확정·종결**. ✅ 05-15 resume 한계 기획 결정 완료(개발 반영 대기). ✅ **05-29 ngrok→cloudflared 인프라 변경 기획·개발 모두 완료**(실회의 검증만 남음). 다음 단계는 (1) **다음 주 실회의 검증 결과 수신** → 통과 시 1주 후 ngrok 폐기 회수, (2) **PLAN-DEV-HANDOFF-20260515 개발 반영** → 반영 후 검수, (3) working tree 일괄 커밋(권장 분할: PLAN-HANDOFF 05-14 -1/-2 한 커밋, QA-AUDIO 1+2 squash 별도 커밋, 05-15 기획 결정 별도 커밋, 05-29 cloudflared 별도 커밋), (4) 잔여 🟡 5건 재배치.
 
-### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기
+### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기 + 저장 경로 폐기 + 녹음 raw concat
 
-모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 + 30분+ 녹음 race 근본 수정 + 녹음 파일 내보내기 신규 기능까지 마무리된 상태.
+모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 + 30분+ 녹음 race 근본 수정 + 녹음 파일 내보내기 신규 기능 + 저장 경로 폐기·브라우저 다운로드 일원화 + 녹음 파일 99.93% 손실 근본 fix(raw binary concat)까지 마무리된 상태.
 
 ### 1단계 홈 (~98%)
 - 복구 카드형 배너 (status별 라우팅 + "이어서 진행" + "삭제하고 새로 시작")
@@ -244,14 +319,15 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 
 ### 7단계 전송 (~98%)
 - Slack 채널/스레드 선택 (카드형 메시지 목록 + 로딩 스피너)
-- .md export + 폴더 선택 (showDirectoryPicker, 미지원 시 prompt 폴백)
-- 체크박스 실행 (.md → Slack → complete 순서)
+- 체크박스 3종: ☑Slack 전송 / ☑.md 다운로드 / ☐녹음 파일 다운로드 (.webm | .mp3 세그먼트)
+- 실행 순서 .md → 녹음 → Slack → complete (`.md`/녹음은 백엔드 FileResponse를 blob으로 받아 브라우저 다운로드 폴더에 저장 + Slack 첨부용으로 EXPORT_DIR에도 보관)
 - Slack/MD 미선택 시 히스토리만 저장 가능 (버튼 "완료" 표시)
 - 미입력 메타데이터 모달
 - 완료 화면: 결과 표시 + Slack 메시지 삭제 버튼 + 재시도 + 건너뛰기
 - 에러 원인별 안내 분기 (No summary → "요약 먼저 생성", 토큰 에러 → "설정 확인")
 - 미리보기 최신 데이터 fetch
 - 더블 클릭 가드
+- 모바일(<768px) 녹음 카드 헤딩: 체크박스+제목과 `.webm/.mp3` 세그먼트가 수직 스택, 데스크탑은 인라인 우측 정렬 유지
 
 ### 히스토리 (~97%)
 - 목록 (카드 리스트, 최신순) + 전문 검색 + 기간 필터
@@ -259,7 +335,8 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 상세: 요약+F/U, 전사 원본 (절대/상대 시각 토글)
 - Slack 전송 이력 + 메시지 삭제
 - 재편집 (Meeting→Session 변환 + editMode 분기)
-- 재전송, .md 다운로드
+- 재전송, .md 다운로드 (blob+Content-Disposition), 녹음 다운로드 (webm/mp3 라디오 모달)
+- 하단 버튼 3그룹 레이아웃 (주액션·보조 다운로드·위험) + 모바일(<768px) `flex-wrap` 자동 줄바꿈
 - 회의록 삭제 (DELETE /meetings/{id} + 확인 모달)
 - Meeting 블록 편집 API 4종 (split, merge, patch, importance)
 - resummarize API
@@ -273,8 +350,8 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - 토큰/API 키 변경 시 .env 파일 자동 동기화
 - 토큰 마스킹 표시
 - Slack 인사 문구 textarea (여러 줄 + 이모티콘)
-- 기본 저장 경로 (showDirectoryPicker)
 - 마이크 민감도 기본값 (settings.json mic_sensitivity)
+- "기본 저장 경로" 항목은 05-14 폐기 — `showDirectoryPicker`의 `handle.name`이 폴더 이름만 반환해 백엔드에서 절대 경로로 해석할 수 없는 본질적 제약. 사용자 측은 브라우저 다운로드, 백엔드 측은 항상 EXPORT_DIR로 일원화
 
 ### 다크모드 (~95%)
 - CSS 변수 오버라이드 (prefers-color-scheme + data-theme)
@@ -296,6 +373,9 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 - PUT /sessions/{id}/blocks: 벌크 블록 교체 API (sync recovery)
 - ensureSessionId: meeting 응답 → session_id 매핑 헬퍼
 - audio.py: chunk 저장 시 session.json 쓰기 생략 (disconnect 시에만 최종 저장)
+- **`services/audio_service.merge_audio_chunks`**: raw binary concat (1MB 버퍼 streaming + 1:1 매칭 강제 + 실패 시 partial 자동 unlink). MediaRecorder의 streamable WebM은 ffmpeg concat demuxer로 처리 불가 — 원본 단일 stream을 raw bytes로 복원해야 함
+- **`_is_merged_audio_corrupted` + `resolve_or_build_audio` + `history._resolve_meeting_audio`**: 손상 자동 감지(`merged < total*0.5`) → unlink → lazy 재병합. 과거 손상 세션은 재 다운로드 1회로 자동 복구
+- **`downloadBlobFromPost`** 헬퍼 (SendSave.tsx): POST + `responseType: 'blob'` + Content-Disposition `filename*=UTF-8''` / plain 양쪽 파싱. .md/녹음 다운로드 4곳에서 동일 패턴 사용
 
 ### 알려진 미구현/미완
 | 항목 | 상태 |
@@ -304,21 +384,34 @@ technical-design.md → "어떻게 만드는가" (구조, 모델, API, 코드)
 | 마이크 끊김 → 자동 post_recording | 미구현 |
 | B-2 ④ 타이머 보정 | useTimer가 Date.now() 기반이면 불필요 |
 | B-2 ⑤ Web Worker | MVP 선택적 |
+| ✅→⏳ resume·복구 audio 한계 (한 세션 두 번 녹음) | **기획 결정 완료 (05-15)**. 저장구조 1-C(평탄 유지+EBML 시그니처 분할) + 병합 2-A(segment별 raw concat→ffmpeg concat filter) 확정. `reports/PLAN-DEV-HANDOFF-20260515.md` 작성 → 개발 반영 대기 (🔴 High) |
 
 ### 기획→개발 전달 사항
 
-**[2026-05-14] 데이터 흐름 근본 수정 — 저장 경로 폐기 + 브라우저 다운로드 일원화**: `reports/PLAN-DEV-HANDOFF-20260514.md` — ⏳ 개발 세션 반영 대기 (사용자 보고 이슈 1·2 근본 수정)
-**[2026-05-14] UI 회귀 — 히스토리 하단 버튼 계층화 + 7단계 체크박스 모바일 동작**: `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ⏳ 개발 세션 반영 대기 (검수 세션 발견)
+**[2026-05-15] 한 세션 다중 녹음 통합 단일 파일 (저장구조 1-C + 병합 2-A)**: `reports/PLAN-DEV-HANDOFF-20260515.md` — ⏳ 개발 반영 대기 (🔴 High). resume(한 세션 두 번 녹음) 자주 발생 → 다운로드 시 후반부 손실 가능. 평탄 구조 유지 + EBML 시그니처 segment 자동 분할 + segment별 raw concat → ffmpeg concat filter. R6′(손상판정 분기)·R3(timestamp offset)·R4(silent failure) 정밀 처리 필수. `decisions.md` 7단계·`technical-design.md` 4-5절 반영됨.
 
-이전 전달 사항 6건 (모두 반영 완료):
+이전 전달 사항 9건 (모두 반영 완료):
+0. `reports/PLAN-DEV-HANDOFF-20260529.md` — ✅ (working tree, ngrok→cloudflared + Basic Auth, A 보조 적용. 다음 주 실회의 검증만 남음. `reports/DEV-REPORT-20260529.md`)
 1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅
 2. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅
 3. `reports/PLAN-REPORT-20260422.md` 8절 — ✅
 4. `reports/PLAN-DEV-HANDOFF-20260423.md` — ✅ (동기화 10건 확인 + 신규 2건 구현)
 5. `reports/PLAN-DEV-HANDOFF-20260507.md` — ✅ (commit `e262762`, 녹음 파일 내보내기 신규 기능)
 6. `reports/PLAN-DEV-HANDOFF-20260507-2.md` — ✅ (commit `e262762`, #전송됨 태그 누락 + textarea ring 잘림)
+7. `reports/PLAN-DEV-HANDOFF-20260514.md` — ✅ (working tree, 저장 경로 폐기 + 브라우저 다운로드 일원화)
+8. `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ✅ (working tree, 히스토리 하단 3그룹 + 7단계 체크박스 모바일)
 
 새 기획 변경이 있으면 이 섹션에 기록.
+
+### 검수→개발 전달 사항
+
+(현재 없음)
+
+이전 검수 전달 사항 (모두 반영 완료):
+- `reports/QA-TO-PLAN-NGROK-REPLACE-20260529.md` (ngrok 차단 진단) — ✅ 기획 세션 경유 처리 → `reports/PLAN-DEV-HANDOFF-20260529.md`로 대체 → 개발 working tree 반영 완료(`reports/DEV-REPORT-20260529.md`). 다음 주 실회의 검증만 남음
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ working tree 반영. 단 ffmpeg silent failure로 부분 효과 → 2차 fix가 마지막 단계
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ working tree 반영 + **10번째 검수 세션(05-15) 통과 확정** (코드 정합성 명세 100% 일치 + 디스크 1:1 매칭 + PM 맥북 30분 실회의 정상, `reports/QA-REPORT-20260515.md`). 두 fix는 squash 권장
+- ✅ resume·복구 audio 한계 (구 QA-FIX-3 제안 항목): 05-15 기획 결정으로 해소 — `reports/PLAN-DEV-HANDOFF-20260515.md`로 대체. 개발 반영 후 검수는 multi-segment 신규 시나리오(녹음→일시중단→재개→추가녹음→다운로드 재생 길이=두 녹음 합) + R6′ 무한 재병합 미발생을 중점 검증
 
 ### 개발→기획 전달 사항
 
@@ -379,8 +472,8 @@ myfirstapp/
 | 세션 | 역할 | 주요 작업 | 수정 대상 파일 |
 |------|------|----------|---------------|
 | **기획 세션** | 기획·설계 | UX 결정, 설계 변경, 디자인 시스템 조정, 기능 논의 | `decisions.md`, `technical-design.md`, `design-system.md` |
-| **개발 세션** | 코드 구현 | 기획 문서 기반 코드 작성, 테스트, 디버깅 | `backend/`, `frontend/` |
-| **검수(QA) 세션** | 품질 검증 | 기획 문서 기준 코드 전수 검사, 불일치·버그 보고 | `reports/QA-REPORT-*.md` (코드 직접 수정 안 함) |
+| **개발 세션** | 코드 구현 | 기획 문서·검수 명세 기반 코드 작성, 테스트, 디버깅 | `backend/`, `frontend/` |
+| **검수(QA) 세션** | 품질 검증 | 기획 문서 기준 코드 전수 검사, 불일치·버그 보고, 결함 명세 작성 | `reports/QA-REPORT-*.md`, `QA-FIX/QA-*.md` (코드 직접 수정 안 함) |
 
 ### 인수인계 방향
 
@@ -392,18 +485,38 @@ myfirstapp/
 - 개발 세션은 아래 "개발→기획 전달 사항"에 기록
 - 기획 세션은 시작 시 이 섹션을 확인하고, 설계 검토 후 항목을 지움
 
+**검수 → 개발** (검수가 코드 결함·데이터 무결성 이슈를 발견한 경우)
+- 검수 세션은 결함 분석·수정 명세를 `QA-FIX/QA-*-YYYYMMDD.md`로 작성하고 아래 "검수→개발 전달 사항"에 등록
+- 개발 세션은 시작 시 이 섹션을 확인하고, 코드 반영 후 항목을 지움
+
 ### 기획→개발 전달 사항
 
-**[2026-05-14] 데이터 흐름 근본 수정 — 저장 경로 폐기 + 브라우저 다운로드 일원화**: `reports/PLAN-DEV-HANDOFF-20260514.md` — ⏳ 개발 세션 반영 대기
-**[2026-05-14] UI 회귀 — 히스토리 하단 버튼 계층화 + 7단계 체크박스 모바일 동작**: `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ⏳ 개발 세션 반영 대기
+**[2026-05-15] 한 세션 다중 녹음 통합 단일 파일** — `reports/PLAN-DEV-HANDOFF-20260515.md` ⏳ 개발 반영 대기 (🔴 High). 저장구조 1-C + 병합 2-A.
 
 이전 전달 사항 (모두 반영 완료):
+- [2026-05-29] ngrok 차단 대응 — Cloudflare Quick Tunnel + Basic Auth 인프라 변경 — ✅ (working tree, `reports/DEV-REPORT-20260529.md`. A 보조 적용으로 vite가 backend/.env 직접 로드, 매 회의 export 절차 제거. 다음 주 실회의 검증만 남음)
 - [2026-04-17] 디자인 시스템 v2 개편 — ✅
 - [2026-04-21~22] 실사용 피드백 기반 대량 변경 — ✅
 - [2026-04-23] 기획 동기화 10건 + 신규 2건 (템플릿 드래그, Slack 메시지 수정) — ✅
 - [2026-05-07] 녹음 파일 내보내기 + 사용자 보고 UI 수정 2건 — ✅ (commit `e262762`)
+- [2026-05-14] 저장 경로 폐기 + 브라우저 다운로드 일원화 — ✅ (working tree)
+- [2026-05-14] 히스토리 하단 3그룹 + 7단계 체크박스 모바일 — ✅ (working tree)
 
 새 기획 변경이 있으면 이 섹션에 기록.
+
+### 검수→개발 전달 사항
+
+(현재 없음 — 05-14 QA-AUDIO-MERGE-LOSS 1+2 종결 + 05-29 ngrok 차단은 기획 세션 경유 처리 후 개발 반영 완료)
+
+이전 검수 전달 사항 (모두 반영 완료):
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ working tree 반영, 단 ffmpeg silent failure로 부분 효과
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ **10번째 검수 세션(05-15) 통과 확정**: 코드 정합성 명세 100% 일치 + `session_20260515_0125c17a` 디스크 1:1 매칭(6,643,109 bytes) + PM 맥북 30분 실회의 정상. 상세 `reports/QA-REPORT-20260515.md`. 두 fix는 squash 권장
+- `QA-FIX/QA-SLACK-MD-PATH-20260507.md` — ✅ (commit `cd8f3d9`)
+- `QA-FIX/QA-SESSION-RACE-20260507.md` — ✅ (commit `69948e7`, 120분 실회의 통과로 종결 확정)
+- `QA-FIX/QA-REEDIT-AND-UX-20260424.md` — ✅
+- `QA-FIX/QA-LONG-RECORDING-20260427.md` — ✅
+
+새 검수 발견이 있으면 이 섹션에 기록.
 
 ---
 
@@ -547,10 +660,11 @@ Sprint 4 완료 후 사용자 실사용에서 발견된 오류 및 개선 요청
 ### 개발 세션
 1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동 로드됨
 2. 첫 메시지: **"HANDOVER.md를 읽고 이어서 개발해줘"**
-3. "기획→개발 전달 사항"을 확인하고 코드에 반영
-4. dev server 시작: 백엔드 `cd backend && uvicorn main:app --reload --port 8000`, 프론트엔드 `cd frontend && npm run dev`
-5. 구현 중 설계 이슈 발견 시 "개발→기획 전달 사항"에 기록
-6. **세션 종료 시 `reports/DEV-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조)
+3. **직전 개발 세션이 `reports/DEV-SESSION-RESUME-*.md`를 남겼는지 확인** — 있으면 그 문서가 가장 최신 액션 가이드 (첫 행동·검증 시나리오·권장 커밋 메시지 정리됨)
+4. "기획→개발 전달 사항" + "검수→개발 전달 사항"을 확인하고 코드에 반영
+5. dev server 시작: 백엔드 `cd backend && uvicorn main:app --reload --port 8000`, 프론트엔드 `cd frontend && npm run dev`
+6. 구현 중 설계 이슈 발견 시 "개발→기획 전달 사항"에 기록
+7. **세션 종료 시 `reports/DEV-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조). 다음 세션에 명시적 인수인계가 필요하면 `reports/DEV-SESSION-RESUME-YYYYMMDD.md`도 함께 작성
 
 ### 검수(QA) 세션
 1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동 로드됨
