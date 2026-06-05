@@ -1,34 +1,41 @@
-import json
-import logging
+"""Compat wrapper — LLM 호출 진입점.
+
+Phase 1A (2026-06-05) 이후 본문은 services/llm/{base,claude,factory}.py로 이전됨.
+이 파일은 호출처 6곳(ai.py, processing.py, history.py 2곳, sessions.py)의
+import 경로와 시그니처를 보존하기 위한 얇은 래퍼다.
+
+importance_source="user" 필터링 책임은 이 래퍼에 둔다(provider는 순수).
+
+provider가 던지는 anthropic 에러(특히 401 AuthenticationError)는 HTTPException(502)로
+변환한다. 이유: main.py의 Basic Auth 미들웨어가 401 응답에 WWW-Authenticate: Basic
+헤더를 붙이는 구조라, 원본 401이 그대로 전파되면 브라우저가 cloudflared 자격증명을
+다시 요구하는 무한 프롬프트가 발생한다.
+"""
+
 from typing import List
 
 import anthropic
+from fastapi import HTTPException
 
-logger = logging.getLogger(__name__)
-
-from config import ANTHROPIC_API_KEY
 from models.block import Block
+from services.llm.factory import get_provider
 
 
-_client: anthropic.Anthropic | None = None
-
-
-def _get_client() -> anthropic.Anthropic:
-    global _client
-    if _client is None:
-        _client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-    return _client
-
-
-TAGGING_SYSTEM_PROMPT = """당신은 회의 전사 텍스트의 중요도를 분류하는 전문가입니다.
-각 블록에 다음 4단계 중 하나를 부여하세요:
-
-- high: 핵심 결정사항, 액션 아이템, 중요 논의 포인트
-- medium: 관련 맥락, 배경 설명, 보조 논의
-- low: 부가적 내용, 간접 관련 사항
-- lowest: 사담, 인사말, 잡담, 주제 이탈
-
-JSON 배열로 응답하세요. 다른 텍스트는 포함하지 마세요."""
+def _safe_call(fn, *args, **kwargs):
+    try:
+        return fn(*args, **kwargs)
+    except anthropic.AuthenticationError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM 인증 실패 (설정의 API 키를 확인해주세요): {e!s}",
+        )
+    except anthropic.APIStatusError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"LLM API 오류 ({e.status_code}): {e!s}",
+        )
+    except anthropic.APIError as e:
+        raise HTTPException(status_code=502, detail=f"LLM 호출 실패: {e!s}")
 
 
 def tag_blocks(
@@ -36,87 +43,15 @@ def tag_blocks(
     title: str = "",
     participants: List[str] | None = None,
 ) -> dict[str, str]:
-    """
-    AI importance tagging for untagged blocks using Claude Haiku.
+    """AI importance tagging for untagged blocks.
 
     Returns dict of {block_id: importance} for blocks that were tagged.
-    Only tags blocks where importance_source != "user" (user tags are never overwritten).
+    Only tags blocks where importance_source != "user".
     """
-    # Filter to untagged blocks only (user tags preserved)
     untagged = [b for b in blocks if b.importance_source != "user"]
     if not untagged:
         return {}
-
-    blocks_text = "\n".join(
-        f"[{b.block_id}] {b.text}" for b in untagged
-    )
-
-    participants_str = ", ".join(participants) if participants else "미입력"
-
-    user_prompt = f"""회의 제목: {title}
-참여자: {participants_str}
-
-전사 블록:
-{blocks_text}
-
-응답 형식:
-[
-  {{"block_id": "blk_001", "importance": "medium"}},
-  ...
-]"""
-
-    client = _get_client()
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=4096,
-        system=[{
-            "type": "text",
-            "text": TAGGING_SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-
-    result_text = response.content[0].text.strip()
-
-    # Parse JSON response
-    try:
-        tags = json.loads(result_text)
-    except json.JSONDecodeError:
-        start = result_text.find("[")
-        end = result_text.rfind("]") + 1
-        if start >= 0 and end > start:
-            try:
-                tags = json.loads(result_text[start:end])
-            except json.JSONDecodeError:
-                logger.warning(f"[AI Tagging] JSON parse failed: {result_text[:200]}")
-                return {}
-        else:
-            logger.warning(f"[AI Tagging] No JSON array found: {result_text[:200]}")
-            return {}
-
-    VALID_IMPORTANCE = {"high", "medium", "low", "lowest"}
-    return {
-        item["block_id"]: item["importance"]
-        for item in tags
-        if isinstance(item, dict)
-        and "block_id" in item
-        and "importance" in item
-        and item["importance"] in VALID_IMPORTANCE
-    }
-
-
-SUMMARY_SYSTEM_PROMPT = """당신은 회의 전사 텍스트를 구조화된 회의록으로 정리하는 전문가입니다.
-아래 템플릿 구조를 정확히 따르세요.
-
-## 주요 논의 사항 & F/U 필요 요소 섹션 작성 규칙:
-1. 전사 내용에서 주요 주제를 식별하여 번호를 매깁니다
-2. 각 주제 안에서 "주요 논의"와 "F/U 필요 사항"을 분리합니다
-3. F/U 항목에는 담당자(@이름)와 기한(~날짜)을 포함합니다 (전사에서 확인된 경우만)
-4. 주제에 속하지 않는 부가 내용은 "기타 메모"에 포함합니다
-
-응답 시 "## 회의 개요" 섹션은 생성하지 마세요 (메타데이터에서 자동 삽입됩니다).
-마지막에 Keywords 줄을 추가하세요."""
+    return _safe_call(get_provider().tag, untagged, title, participants)
 
 
 def summarize_blocks(
@@ -125,60 +60,5 @@ def summarize_blocks(
     participants: List[str] | None = None,
     date: str = "",
 ) -> str:
-    """
-    Generate meeting summary using Claude Sonnet.
-    Only high+medium importance blocks are passed as input.
-    Returns raw Claude response text.
-    """
-    filtered = [b for b in blocks if b.importance in ("high", "medium")]
-    if not filtered:
-        filtered = blocks
-
-    blocks_text = "\n".join(
-        f"[{b.timestamp_start:.0f}s] {b.text}" for b in filtered
-    )
-
-    participants_str = ", ".join(participants) if participants else "미입력"
-
-    user_prompt = f"""회의 제목: {title}
-참여자: {participants_str}
-회의 날짜: {date}
-
-전사 텍스트 (중요도 상+중 블록만):
-{blocks_text}
-
----
-다음 형식으로 응답하세요:
-
-## 주요 논의 사항 & F/U 필요 요소
-
-### 1. [주제명]
-**주요 논의**
-- ...
-
-**F/U 필요 사항**
-- [@담당자] 할 일 (~기한)
-
-### 2. [주제명]
-...
-
----
-
-## 기타 메모
-- ...
-
-Keywords: [키워드1, 키워드2, ...]"""
-
-    client = _get_client()
-    response = client.messages.create(
-        model="claude-sonnet-4-20250514",
-        max_tokens=8192,
-        system=[{
-            "type": "text",
-            "text": SUMMARY_SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-
-    return response.content[0].text.strip()
+    """Generate meeting summary. Only high+medium importance blocks are used internally."""
+    return _safe_call(get_provider().summarize, blocks, title, participants, date)

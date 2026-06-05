@@ -16,16 +16,30 @@ import { testConnection, listChannels } from '../api/slack';
 import api from '../api/client';
 import { getTheme, setTheme as applyThemeChoice } from '../utils/theme';
 import type { Theme } from '../utils/theme';
-import type { Template } from '../types';
+import type { Template, LLMProviderName, ProviderConfig, LLMSettings } from '../types';
 import type { Contact } from '../api/contacts';
 import type { SlackChannel } from '../api/slack';
 
 interface AppSettings {
   slack: { bot_token: string; connected: boolean };
+  llm: LLMSettings;
   claude: { api_key: string; summary_model: string; tagging_model: string };
   whisper: { model: string };
   slack_greeting: string;
 }
+
+const PROVIDER_LABELS: Record<LLMProviderName, string> = {
+  claude: 'Claude',
+  gemini: 'Gemini',
+  local: 'Local (Ollama)',
+  openai: 'OpenAI',
+};
+
+const PROVIDER_PHASE: Partial<Record<LLMProviderName, string>> = {
+  local: 'Phase 2 도입 예정 (현재 미지원)',
+  gemini: 'Phase 3 도입 예정 (현재 미지원)',
+  openai: 'Phase 4 도입 예정 (현재 미지원)',
+};
 
 function SortableTemplateItem({ tpl, onEdit, onDelete }: { tpl: Template; onEdit: () => void; onDelete: () => void }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: tpl.template_id });
@@ -66,6 +80,12 @@ export default function Settings() {
   const [micSensitivity, setMicSensitivity] = useState(1.0);
   const [deleteTemplateId, setDeleteTemplateId] = useState<string | null>(null);
 
+  // LLM provider
+  const [llmProvider, setLLMProvider] = useState<LLMProviderName>('claude');
+  const [llmSummaryModel, setLLMSummaryModel] = useState('');
+  const [llmTaggingModel, setLLMTaggingModel] = useState('');
+  const [editingLLMModels, setEditingLLMModels] = useState(false);
+
   // Templates
   const [templates, setTemplates] = useState<Template[]>([]);
   const [templateModal, setTemplateModal] = useState(false);
@@ -105,6 +125,11 @@ export default function Settings() {
       setGreeting(s.slack_greeting || '');
       setWhisperModel(s.whisper?.model || 'medium');
       setMicSensitivity(s.mic_sensitivity || 1.0);
+      const provider = (s.llm?.provider as LLMProviderName) || 'claude';
+      setLLMProvider(provider);
+      const cfg = s.llm?.providers?.[provider];
+      setLLMSummaryModel(cfg?.summary_model || '');
+      setLLMTaggingModel(cfg?.tagging_model || '');
       setTemplates(t);
       setParticipants(p);
       setLocations(l);
@@ -134,11 +159,53 @@ export default function Settings() {
 
   const handleSaveApiKey = async () => {
     try {
-      const res = await api.patch('/settings', { claude: { api_key: newApiKey } });
+      const res = await api.patch('/settings', {
+        llm: { providers: { [llmProvider]: { api_key: newApiKey } } },
+      });
       setSettings(res.data);
       setEditingApiKey(false);
       setNewApiKey('');
-      showToast('API 키 저장됨');
+      if (res.data?._warning) {
+        showToast(`저장됨 — ${res.data._warning}`);
+      } else {
+        showToast('API 키 저장됨');
+      }
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      showToast(detail || '저장 실패');
+    }
+  };
+
+  const handleSelectProvider = async (provider: LLMProviderName) => {
+    setLLMProvider(provider);
+    setEditingApiKey(false);
+    setEditingLLMModels(false);
+    setNewApiKey('');
+    try {
+      const res = await api.patch('/settings', { llm: { provider } });
+      setSettings(res.data);
+      const cfg = res.data?.llm?.providers?.[provider];
+      setLLMSummaryModel(cfg?.summary_model || '');
+      setLLMTaggingModel(cfg?.tagging_model || '');
+      showToast(`LLM provider: ${PROVIDER_LABELS[provider]}`);
+    } catch { showToast('저장 실패'); }
+  };
+
+  const handleSaveLLMModels = async () => {
+    try {
+      const res = await api.patch('/settings', {
+        llm: {
+          providers: {
+            [llmProvider]: {
+              summary_model: llmSummaryModel,
+              tagging_model: llmTaggingModel,
+            },
+          },
+        },
+      });
+      setSettings(res.data);
+      setEditingLLMModels(false);
+      showToast('모델 ID 저장됨');
     } catch { showToast('저장 실패'); }
   };
 
@@ -401,20 +468,73 @@ export default function Settings() {
           </div>
 
           <div className="bg-bg-subtle rounded-xl p-4">
-            <div className="flex items-center justify-between">
+            <p className="text-[15px] font-medium text-text">LLM</p>
+            <select
+              value={llmProvider}
+              onChange={(e) => handleSelectProvider(e.target.value as LLMProviderName)}
+              className="mt-2 w-full bg-bg rounded-lg px-3 py-2 pr-10 text-sm focus:ring-2 focus:ring-primary focus:outline-none cursor-pointer"
+            >
+              {(Object.keys(PROVIDER_LABELS) as LLMProviderName[]).map((p) => (
+                <option key={p} value={p}>
+                  {PROVIDER_LABELS[p]}{PROVIDER_PHASE[p] ? ' — 미지원' : ''}
+                </option>
+              ))}
+            </select>
+
+            {PROVIDER_PHASE[llmProvider] && (
+              <p className="mt-2 text-xs text-recording">{PROVIDER_PHASE[llmProvider]}</p>
+            )}
+
+            <div className="mt-3 flex items-center justify-between">
               <div>
-                <p className="text-[15px] font-medium text-text">Claude API</p>
-                <p className="text-xs text-text-tertiary mt-0.5">{maskToken(settings?.claude?.api_key || '')}</p>
+                <p className="text-xs text-text-secondary">{PROVIDER_LABELS[llmProvider]} API 키</p>
+                <p className="text-xs text-text-tertiary mt-0.5">
+                  {maskToken(settings?.llm?.providers?.[llmProvider]?.api_key || (llmProvider === 'claude' ? settings?.claude?.api_key || '' : ''))}
+                </p>
               </div>
               <button onClick={() => setEditingApiKey(!editingApiKey)} className="text-sm text-text-secondary hover:text-text cursor-pointer">변경</button>
             </div>
             {editingApiKey && (
-              <div className="mt-3 flex gap-2">
+              <div className="mt-2 flex gap-2">
                 <input type="password" placeholder="새 API 키" value={newApiKey} onChange={(e) => setNewApiKey(e.target.value)}
                   className="flex-1 bg-bg rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-primary focus:outline-none" />
                 <button onClick={handleSaveApiKey} className="px-3 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">저장</button>
               </div>
             )}
+
+            <div className="mt-4 flex items-center justify-between">
+              <p className="text-xs text-text-secondary">모델 ID</p>
+              <button onClick={() => setEditingLLMModels(!editingLLMModels)} className="text-sm text-text-secondary hover:text-text cursor-pointer">변경</button>
+            </div>
+            <div className="mt-2 space-y-2">
+              <div>
+                <label className="text-[11px] text-text-tertiary">요약 모델 (summary)</label>
+                <input
+                  type="text"
+                  value={llmSummaryModel}
+                  onChange={(e) => setLLMSummaryModel(e.target.value)}
+                  disabled={!editingLLMModels}
+                  placeholder={llmProvider === 'claude' ? 'claude-sonnet-4-20250514 (비워두면 기본값)' : '(provider별 모델 ID)'}
+                  className="w-full bg-bg rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                />
+              </div>
+              <div>
+                <label className="text-[11px] text-text-tertiary">태깅 모델 (tagging)</label>
+                <input
+                  type="text"
+                  value={llmTaggingModel}
+                  onChange={(e) => setLLMTaggingModel(e.target.value)}
+                  disabled={!editingLLMModels}
+                  placeholder={llmProvider === 'claude' ? 'claude-haiku-4-5-20251001 (비워두면 기본값)' : '(provider별 모델 ID)'}
+                  className="w-full bg-bg rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
+                />
+              </div>
+              {editingLLMModels && (
+                <div className="flex justify-end">
+                  <button onClick={handleSaveLLMModels} className="px-3 py-1.5 text-xs font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">저장</button>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="bg-bg-subtle rounded-xl p-4">

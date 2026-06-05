@@ -129,3 +129,16 @@ export interface RecoverableSession {
 }
 
 export type WizardStep = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+
+export type LLMProviderName = 'claude' | 'gemini' | 'local' | 'openai';
+
+export interface ProviderConfig {
+  api_key: string;
+  summary_model: string;
+  tagging_model: string;
+}
+
+export interface LLMSettings {
+  provider: LLMProviderName;
+  providers: Record<LLMProviderName, ProviderConfig>;
+}
