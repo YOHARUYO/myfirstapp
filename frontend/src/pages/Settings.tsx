@@ -514,7 +514,7 @@ export default function Settings() {
                   value={llmSummaryModel}
                   onChange={(e) => setLLMSummaryModel(e.target.value)}
                   disabled={!editingLLMModels}
-                  placeholder={llmProvider === 'claude' ? 'claude-sonnet-4-20250514 (비워두면 기본값)' : '(provider별 모델 ID)'}
+                  placeholder={llmProvider === 'claude' ? '예: claude-sonnet-4-5-xxxxxxxx (비워두면 최신 기본값)' : '(provider별 모델 ID)'}
                   className="w-full bg-bg rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
                 />
               </div>
@@ -525,7 +525,7 @@ export default function Settings() {
                   value={llmTaggingModel}
                   onChange={(e) => setLLMTaggingModel(e.target.value)}
                   disabled={!editingLLMModels}
-                  placeholder={llmProvider === 'claude' ? 'claude-haiku-4-5-20251001 (비워두면 기본값)' : '(provider별 모델 ID)'}
+                  placeholder={llmProvider === 'claude' ? '예: claude-haiku-4-5-xxxxxxxx (비워두면 최신 기본값)' : '(provider별 모델 ID)'}
                   className="w-full bg-bg rounded-lg px-3 py-1.5 text-xs font-mono focus:ring-2 focus:ring-primary focus:outline-none disabled:opacity-60"
                 />
               </div>

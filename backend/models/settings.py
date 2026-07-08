@@ -11,7 +11,7 @@ class ClaudeSettings(BaseModel):
     """Legacy settings — kept for backward compatibility with existing settings.json.
     신규 코드는 LLMSettings.providers["claude"]를 사용한다."""
     api_key: str = ""
-    summary_model: str = "claude-sonnet-4-20250514"
+    summary_model: str = "claude-sonnet-4-6"
     tagging_model: str = "claude-haiku-4-5-20251001"
 
 

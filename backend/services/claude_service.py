@@ -30,10 +30,16 @@ def _safe_call(fn, *args, **kwargs):
             detail=f"LLM 인증 실패 (설정의 API 키를 확인해주세요): {e!s}",
         )
     except anthropic.APIStatusError as e:
-        raise HTTPException(
-            status_code=502,
-            detail=f"LLM API 오류 ({e.status_code}): {e!s}",
-        )
+        detail = f"LLM API 오류 ({e.status_code}): {e!s}"
+        # 모델 retire / 미존재 케이스를 한국어 안내로 변환
+        error_str = str(e).lower()
+        if e.status_code == 404 and ("model" in error_str or "not_found" in error_str):
+            detail = (
+                "요약·태깅 모델이 더 이상 제공되지 않거나 잘못된 ID입니다. "
+                "설정 → 연동 → LLM에서 모델 ID를 최신으로 갱신해주세요. "
+                f"(원본: {e!s})"
+            )
+        raise HTTPException(status_code=502, detail=detail)
     except anthropic.APIError as e:
         raise HTTPException(status_code=502, detail=f"LLM 호출 실패: {e!s}")
 

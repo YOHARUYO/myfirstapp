@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 DEFAULT_TAGGING_MODEL = "claude-haiku-4-5-20251001"
-DEFAULT_SUMMARY_MODEL = "claude-sonnet-4-20250514"
+DEFAULT_SUMMARY_MODEL = "claude-sonnet-4-6"
 
 
 TAGGING_SYSTEM_PROMPT = """당신은 회의 전사 텍스트의 중요도를 분류하는 전문가입니다.
