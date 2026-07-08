@@ -221,48 +221,43 @@ cloudflared tunnel --url http://localhost:5173
 
 ---
 
-## 8. 현재 구현 완료 항목 (2026-05-29 기준)
+## 8. 현재 구현 완료 항목 (2026-06-02 기준)
 
-> **마지막 업데이트**: 2026-05-29 (cloudflare + Basic Auth 인프라 변경 개발 반영 완료 + 자동/로컬/외부 접속 검증 통과. 다음 주 실회의 검증만 대기)
-> **최신 커밋**: `73109e9` (05-14 기획 결정 + 핸드오프 2건) — origin/master push 완료
-> **Working tree 미커밋**: 05-14 작업분(개발/검수, 커밋 대기) + 05-15 기획 작업분 + **05-29 인프라 변경 (코드 + 문서 + 메모리, 커밋 대기)**. 05-29 추가: `backend/main.py`(Basic Auth 미들웨어) + `frontend/vite.config.ts`(Basic Auth 미들웨어 + backend/.env 자동 로드) + `backend/.env`(자격증명 2변수) + `HANDOVER.md`(7-A 신규 절 + 8/10절) + 메모리 3건(ngrok 삭제, cloudflared 신규, MEMORY 인덱스). 신규 untracked reports: `QA-TO-PLAN-NGROK-REPLACE-20260529.md`(검수), `PLAN-DEV-HANDOFF-20260529.md`(기획), `DEV-REPORT-20260529.md`(개발), `PLAN-REPORT-20260529.md`(기획), `PLAN-SESSION-RESUME-20260529.md`(기획). 05-15분: `decisions.md` / `technical-design.md` + 3개 reports. 05-14분: backend 5 + `audio_service.py` + frontend 3 modified, QA-FIX 2건 + DEV/QA/PLAN-REPORT-20260514 + DEV-SESSION-RESUME-20260515 untracked
-> **다음 개발 세션이 먼저 읽을 것**: `reports/DEV-SESSION-RESUME-20260515.md` — 첫 행동 / 검증 시나리오 / 권장 분할 커밋 메시지 / 잔여 미결 모두 정리됨
+> **마지막 업데이트**: 2026-06-02 (분할 커밋 4건 + multi-segment audio 1건 push 완료. 06-01 LLM 확장성 검토 + 06-02 Phase 1A·1B 핸드오프 작성 완료. **Phase 1A 개발 세션 진행 중**)
+> **최신 커밋**: `c95b308` (다중 녹음 통합 단일 파일 — EBML segment 분기 + ffmpeg concat filter, PLAN-DEV-HANDOFF-20260515) — origin/master push 완료
+> **Working tree 미커밋**: reports/ 6개 untracked (06-01·02 기획·개발 세션 산출물, 코드 변경 0)
+>   - `reports/DEV-REPORT-20260602.md` — 06-01·02 개발 세션 총괄(분할 커밋 4건 + multi-segment)
+>   - `reports/PLAN-REPORT-20260601.md` — LLM 확장성 검토 본문
+>   - `reports/PLAN-REPORT-20260602.md` — 06-02 결정 종합 (Phase 분할 확정)
+>   - `reports/PLAN-DEV-HANDOFF-20260602-2.md` — Phase 1A 핸드오프 (LLM 추상화 + 모델 ID 동적 fix)
+>   - `reports/PLAN-DEV-HANDOFF-20260602.md` — Phase 1B 핸드오프 (슬랙 포맷 4건 + prefill + 버그 2건)
+>   - `reports/PLAN-SESSION-RESUME-20260602.md` — 다음 기획 세션 인수인계
+> **현재 진행 중**: Phase 1A 개발 세션 (LLM provider 추상화 골격 + Claude provider + 모델 ID 동적 fix)
 > **최근 커밋 5건 (모두 origin push 완료):**
-> - `73109e9` — 05-14 기획 결정 + 핸드오프 2건 (저장 경로 폐기 + UI 회귀 보정)
-> - `aa83de5` — 05-07 미커밋 산출물 + e262762 반영 표시 정정 (문서 동기화)
-> - `e262762` — 녹음 파일 내보내기 신규 기능 + #전송됨 태그 누락 + textarea ring 잘림 (PLAN-DEV-HANDOFF-20260507 + -2)
-> - `69948e7` — 30분+ 녹음 session.json 손상 근본 수정 (atomic write + 공통 threading.Lock + 자동 복구)
-> - `cd8f3d9` — Slack MD 첨부 경로 통일 (settings.json export_path 우선 검색 + md_attached 토스트)
+> - `c95b308` — 다중 녹음 통합 단일 파일 (EBML segment 분기 + ffmpeg concat filter, PLAN-DEV-HANDOFF-20260515)
+> - `3fca07b` — ngrok→cloudflared + Basic Auth 인프라 변경 (PLAN-DEV-HANDOFF-20260529)
+> - `e9244ed` — 05-15 기획 결정 — 한 세션 다중 녹음 통합 단일 파일 (저장구조 1-C + 병합 2-A)
+> - `1d0a8d7` — 녹음 파일 99.93% 손실 근본 fix — raw binary concat (QA-AUDIO-MERGE-LOSS 1+2)
+> - `b0004fd` — 저장 경로 폐기 + 브라우저 다운로드 일원화 + UI 회귀 (PLAN-DEV-HANDOFF-20260514 + -2)
 >
-> **검증 완료 (검수 세션 통과):**
-> - QA-SESSION-RACE: 200 worker 동시 append 시뮬 + **120분 실회의 통과** → race·응답 지연 종결 확정. 2차 성능 수정(E/F/G) 조건 미충족 → 폐기
+> **검증 완료 (검수 세션 통과 + PM 실회의):**
+> - QA-SESSION-RACE: 200 worker 동시 append 시뮬 + **120분 실회의 통과** → race·응답 지연 종결 확정
 > - QA-SLACK-MD-PATH: 사용자 시나리오 1 직접 확인 → Slack 채널에 .md 첨부 정상
-> - 모바일 회귀(히스토리 5버튼 + 7단계 체크박스): 기획 결정 + working tree 반영 (사용자 직접 검증 필요)
-> - **🔴 QA-AUDIO-MERGE-LOSS 1+2 (raw binary concat): 10번째 검수 세션(05-15) 통과 확정** — 코드 정합성 명세 100% 일치 + `session_20260515_0125c17a` 디스크 raw concat 1:1 매칭(6,643,109 bytes)·타임라인 정상 + **PM 맥북 내장 마이크 30분 실회의 정상 확인**. 부수 발견: 마이크 미지원 데스크탑의 영상 우회 검증은 입력 자체가 무음(raw concat 무관, chunk_000 단독도 -59.5dB) — 운영 환경 무영향. 상세 `reports/QA-REPORT-20260515.md`
->
-> **✅ 05-14 개발 세션 반영 완료 (working tree, 커밋 대기):**
-> - PLAN-DEV-HANDOFF-20260514 (저장 경로 폐기): 8건 — 백엔드 4종 export 엔드포인트를 `FileResponse`로 통일, `export_path` 모델·요청·UI 전면 제거, SendSave에 `downloadBlobFromPost` 헬퍼 도입
-> - PLAN-DEV-HANDOFF-20260514-2 (UI 회귀): 2건 — HistoryDetail 하단 버튼 3그룹 + `flex-wrap`, SendSave 녹음 카드 모바일 수직 스택
-> - 회귀 fix 부수 1건: HistoryDetail의 `.md 다운로드`를 blob+Content-Disposition 패턴으로 통일 (백엔드 FileResponse 전환 회귀 차단)
-> - **🔴 QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2 (raw binary concat 전면 교체)**: `merge_audio_chunks`에서 ffmpeg subprocess 완전 제거, 1MB 버퍼 streaming + `written == expected` 1:1 매칭 강제 + 실패 시 partial 자동 unlink. `_is_merged_audio_corrupted`는 `merged < total*0.5` 단일 조건으로 단순화. **검수 통과 확정 (05-15) — 디스크 1:1 매칭 + PM 맥북 30분 실회의 정상**
->
-> **✅ 05-29 개발 세션 반영 완료 (working tree, 커밋 대기)**:
-> - PLAN-DEV-HANDOFF-20260529 (cloudflared + Basic Auth): 7건 — `backend/main.py` `basic_auth_middleware`(secrets.compare_digest + `/api/health` 예외 + 누락 시 KeyError 기동 실패), `frontend/vite.config.ts` `configureServer` Basic Auth 미들웨어, `backend/.env` 자격증명(`secrets.token_urlsafe(16)` 22자), HANDOVER 7-A 신규 절(CMD 3터미널), 메모리 3건(ngrok 삭제 + cloudflared 신규 + MEMORY 인덱스). 단독 커밋 권장
-> - **A 보조 변경(개발 단계 PM 결정 갱신)**: `vite.config.ts`가 `backend/.env`를 fs로 직접 로드 → 매 회의 환경변수 export 절차 제거 + 비밀번호 터미널 history 미잔여. backend(dotenv)/frontend(fs) 양쪽이 같은 `backend/.env` 단일 source of truth
-> - **검증 완료 (자동 + 로컬 + cloudflare 외부 접속)**: §5.3 #8·#10·#11 curl probe 통과 / §5.1 #1·#2·#3 로컬 회귀 + 기존 기능(녹음/다운로드/Slack/히스토리/설정) / §5.2 #4 MacBook 외부 접속 → Basic Auth → 홈 렌더 통과
+> - 모바일 회귀(히스토리 5버튼 + 7단계 체크박스): 기획 결정 + 코드 반영 완료
+> - **🔴 QA-AUDIO-MERGE-LOSS 1+2 (raw binary concat)**: 10번째 검수 통과 + PM 맥북 30분 실회의 정상 (commit `1d0a8d7`)
+> - **multi-segment 단일 파일 (commit `c95b308`)**: 자동 검증 6종 + PM 실회의 검증 통과 (`reports/DEV-REPORT-20260602.md` §4)
+> - **05-29 ngrok→cloudflared (commit `3fca07b`)**: 자동/로컬/외부 접속 통과 + 실회의 검증 (1주 안정 운영 후 ngrok 폐기 예정)
 >
 > **다음 검수 액션 (대기)**:
-> - ✅ QA-AUDIO-MERGE-LOSS 1+2 검수 통과 확정 (05-15) — 코드 정합성 + 디스크 1:1 매칭 + PM 맥북 30분 실회의 정상. 추가 검수 불필요
-> - PLAN-DEV-HANDOFF-20260515(resume·복구 audio 재설계) 개발 반영 후 검수 (저장구조 1-C + 병합 2-A 동작 검증)
-> - **PLAN-DEV-HANDOFF-20260529: 자동/로컬/외부 접속 통과. 다음 주 1시간 실회의로 §5.2 #5~7(WS chunk 누락 0건 + 다운로드 50MB+ + Slack/MD) + §5.4 #12 종료 후 차단 PM 자체 검증 예정** — 결과에 따라 검수 추가 진행 여부 결정
+> - **Phase 1A 개발 완료 후 검수 발주** — 회귀 무손 핵심(provider 미설정/claude 기본값이 현재와 byte-identical 동작)
+> - Phase 1B 발주는 Phase 1A 검수 통과·commit 후
 > - 잔여 🟡 5건 재배치 (Part D 2 / 환경 의존 2 / 미리보기 1)
-> - resume·복구 audio 한계 (한 세션 두 번 녹음 시 EBML 헤더 중복) → **기획 결정 완료 (05-15)**: 저장구조 1-C + 병합 2-A. `reports/PLAN-DEV-HANDOFF-20260515.md` 작성 → 개발 반영 대기 (🔴 High, resume 자주 발생). QA-FIX-3는 본 핸드오프로 대체(신규 동작+결함 혼합이라 PLAN-DEV-HANDOFF가 적합).
 >
-> **상태**: ✅ 05-14 운영 차단 🔴 1건(녹음 99.93% 손실) **검수 통과 확정·종결**. ✅ 05-15 resume 한계 기획 결정 완료(개발 반영 대기). ✅ **05-29 ngrok→cloudflared 인프라 변경 기획·개발 모두 완료**(실회의 검증만 남음). 다음 단계는 (1) **다음 주 실회의 검증 결과 수신** → 통과 시 1주 후 ngrok 폐기 회수, (2) **PLAN-DEV-HANDOFF-20260515 개발 반영** → 반영 후 검수, (3) working tree 일괄 커밋(권장 분할: PLAN-HANDOFF 05-14 -1/-2 한 커밋, QA-AUDIO 1+2 squash 별도 커밋, 05-15 기획 결정 별도 커밋, 05-29 cloudflared 별도 커밋), (4) 잔여 🟡 5건 재배치.
+> **상태**: 05-15 multi-segment audio 개발·검증·commit 모두 완료(`c95b308`). 05-29 인프라 변경 commit 완료(`3fca07b`, 실회의 검증 통과). **Phase 1A 개발 진행 중** → 완료 후 검수 → commit → Phase 1B 발주 → 같은 사이클 → 이후 Phase 2(MacBook 환경) 핸드오프 작성.
 
-### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기 + 저장 경로 폐기 + 녹음 raw concat
+### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기 + 저장 경로 폐기 + 녹음 raw concat + multi-segment 단일 파일
 
-모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 + 30분+ 녹음 race 근본 수정 + 녹음 파일 내보내기 신규 기능 + 저장 경로 폐기·브라우저 다운로드 일원화 + 녹음 파일 99.93% 손실 근본 fix(raw binary concat)까지 마무리된 상태.
+모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 + 30분+ 녹음 race 근본 수정 + 녹음 파일 내보내기 신규 기능 + 저장 경로 폐기·브라우저 다운로드 일원화 + 녹음 파일 99.93% 손실 근본 fix(raw binary concat) + 한 세션 다중 녹음 통합 단일 파일(EBML segment 분기 + ffmpeg concat filter)까지 마무리된 상태.
 
 ### 1단계 홈 (~98%)
 - 복구 카드형 배너 (status별 라우팅 + "이어서 진행" + "삭제하고 새로 시작")
@@ -384,34 +379,37 @@ cloudflared tunnel --url http://localhost:5173
 | 마이크 끊김 → 자동 post_recording | 미구현 |
 | B-2 ④ 타이머 보정 | useTimer가 Date.now() 기반이면 불필요 |
 | B-2 ⑤ Web Worker | MVP 선택적 |
-| ✅→⏳ resume·복구 audio 한계 (한 세션 두 번 녹음) | **기획 결정 완료 (05-15)**. 저장구조 1-C(평탄 유지+EBML 시그니처 분할) + 병합 2-A(segment별 raw concat→ffmpeg concat filter) 확정. `reports/PLAN-DEV-HANDOFF-20260515.md` 작성 → 개발 반영 대기 (🔴 High) |
+| ~~resume·복구 audio 한계 (한 세션 두 번 녹음)~~ | ✅ **완료** (commit `c95b308`) — 저장구조 1-C(평탄 유지+EBML 시그니처 분할) + 병합 2-A(segment별 raw concat→ffmpeg concat filter). 자동 검증 6종 + PM 실회의 검증 통과 |
 
 ### 기획→개발 전달 사항
 
-**[2026-05-15] 한 세션 다중 녹음 통합 단일 파일 (저장구조 1-C + 병합 2-A)**: `reports/PLAN-DEV-HANDOFF-20260515.md` — ⏳ 개발 반영 대기 (🔴 High). resume(한 세션 두 번 녹음) 자주 발생 → 다운로드 시 후반부 손실 가능. 평탄 구조 유지 + EBML 시그니처 segment 자동 분할 + segment별 raw concat → ffmpeg concat filter. R6′(손상판정 분기)·R3(timestamp offset)·R4(silent failure) 정밀 처리 필수. `decisions.md` 7단계·`technical-design.md` 4-5절 반영됨.
+**[2026-06-02] Phase 1A — LLM 추상화 골격 + Claude provider + 모델 ID 동적 fix**: `reports/PLAN-DEV-HANDOFF-20260602-2.md` — 🔵 **개발 진행 중**. `services/llm/{base, claude, factory}` 신규 + `claude_service` 호환 래퍼 + 설정 UI provider 드롭다운 + 모델 ID 동적 fix. **회귀 무손이 핵심** (provider 미설정/claude 기본값 동작이 현재와 byte-identical).
 
-이전 전달 사항 9건 (모두 반영 완료):
-0. `reports/PLAN-DEV-HANDOFF-20260529.md` — ✅ (working tree, ngrok→cloudflared + Basic Auth, A 보조 적용. 다음 주 실회의 검증만 남음. `reports/DEV-REPORT-20260529.md`)
-1. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅
-2. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅
-3. `reports/PLAN-REPORT-20260422.md` 8절 — ✅
-4. `reports/PLAN-DEV-HANDOFF-20260423.md` — ✅ (동기화 10건 확인 + 신규 2건 구현)
-5. `reports/PLAN-DEV-HANDOFF-20260507.md` — ✅ (commit `e262762`, 녹음 파일 내보내기 신규 기능)
-6. `reports/PLAN-DEV-HANDOFF-20260507-2.md` — ✅ (commit `e262762`, #전송됨 태그 누락 + textarea ring 잘림)
-7. `reports/PLAN-DEV-HANDOFF-20260514.md` — ✅ (working tree, 저장 경로 폐기 + 브라우저 다운로드 일원화)
-8. `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ✅ (working tree, 히스토리 하단 3그룹 + 7단계 체크박스 모바일)
+**[2026-06-02] Phase 1B — 슬랙 포맷 4건 + prefill + 버그 2건**: `reports/PLAN-DEV-HANDOFF-20260602.md` — ⏳ Phase 1A 완료·commit 후 발주. F/U `[xxx님]` 평탄+인접정렬 / 슬랙 3종 메시지 thread(메인+회신2) / prefill(1·2번, 서버 저장) / 회의 제목 변경 미반영 fix / IME "님 님" 중복 fix(isComposing 가드).
+
+이전 전달 사항 11건 (모두 반영 완료):
+0. `reports/PLAN-DEV-HANDOFF-20260515.md` — ✅ (commit `c95b308`, multi-segment 단일 파일: EBML segment 분기 + ffmpeg concat filter, 자동 6종+PM 실회의 통과)
+1. `reports/PLAN-DEV-HANDOFF-20260529.md` — ✅ (commit `3fca07b`, ngrok→cloudflared + Basic Auth)
+2. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅
+3. `reports/PLAN-DEV-HANDOFF-20260422-2.md` — ✅
+4. `reports/PLAN-REPORT-20260422.md` 8절 — ✅
+5. `reports/PLAN-DEV-HANDOFF-20260423.md` — ✅ (동기화 10건 확인 + 신규 2건 구현)
+6. `reports/PLAN-DEV-HANDOFF-20260507.md` — ✅ (commit `e262762`, 녹음 파일 내보내기 신규 기능)
+7. `reports/PLAN-DEV-HANDOFF-20260507-2.md` — ✅ (commit `e262762`, #전송됨 태그 누락 + textarea ring 잘림)
+8. `reports/PLAN-DEV-HANDOFF-20260514.md` — ✅ (commit `b0004fd`, 저장 경로 폐기 + 브라우저 다운로드 일원화)
+9. `reports/PLAN-DEV-HANDOFF-20260514-2.md` — ✅ (commit `b0004fd`, 히스토리 하단 3그룹 + 7단계 체크박스 모바일)
 
 새 기획 변경이 있으면 이 섹션에 기록.
 
 ### 검수→개발 전달 사항
 
-(현재 없음)
+(현재 없음 — 05-15 multi-segment audio는 c95b308 commit 시점 PM 실회의 통과로 단독 commit, 별도 검수 세션 발주는 Phase 1A 완료 후 함께 진행 검토)
 
 이전 검수 전달 사항 (모두 반영 완료):
-- `reports/QA-TO-PLAN-NGROK-REPLACE-20260529.md` (ngrok 차단 진단) — ✅ 기획 세션 경유 처리 → `reports/PLAN-DEV-HANDOFF-20260529.md`로 대체 → 개발 working tree 반영 완료(`reports/DEV-REPORT-20260529.md`). 다음 주 실회의 검증만 남음
-- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ working tree 반영. 단 ffmpeg silent failure로 부분 효과 → 2차 fix가 마지막 단계
-- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ working tree 반영 + **10번째 검수 세션(05-15) 통과 확정** (코드 정합성 명세 100% 일치 + 디스크 1:1 매칭 + PM 맥북 30분 실회의 정상, `reports/QA-REPORT-20260515.md`). 두 fix는 squash 권장
-- ✅ resume·복구 audio 한계 (구 QA-FIX-3 제안 항목): 05-15 기획 결정으로 해소 — `reports/PLAN-DEV-HANDOFF-20260515.md`로 대체. 개발 반영 후 검수는 multi-segment 신규 시나리오(녹음→일시중단→재개→추가녹음→다운로드 재생 길이=두 녹음 합) + R6′ 무한 재병합 미발생을 중점 검증
+- `reports/QA-TO-PLAN-NGROK-REPLACE-20260529.md` (ngrok 차단 진단) — ✅ 기획 경유 처리 → commit `3fca07b`
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ commit `1d0a8d7`에 squash. 단 ffmpeg silent failure로 부분 효과 → 2차 fix가 마지막 단계
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ commit `1d0a8d7` (10번째 검수 세션 통과 + PM 맥북 30분 실회의 정상)
+- ✅ resume·복구 audio 한계 (구 QA-FIX-3 제안 항목): 05-15 기획 결정 → commit `c95b308`로 해소
 
 ### 개발→기획 전달 사항
 
@@ -491,26 +489,29 @@ myfirstapp/
 
 ### 기획→개발 전달 사항
 
-**[2026-05-15] 한 세션 다중 녹음 통합 단일 파일** — `reports/PLAN-DEV-HANDOFF-20260515.md` ⏳ 개발 반영 대기 (🔴 High). 저장구조 1-C + 병합 2-A.
+**[2026-06-02] Phase 1A — LLM 추상화 + 모델 ID 동적 fix** — `reports/PLAN-DEV-HANDOFF-20260602-2.md` 🔵 **개발 진행 중**. services/llm/* 신규 + claude_service 호환 래퍼 + 설정 UI provider 드롭다운 + 회귀 무손.
+
+**[2026-06-02] Phase 1B — 슬랙 포맷 4건 + prefill + 버그 2건** — `reports/PLAN-DEV-HANDOFF-20260602.md` ⏳ Phase 1A 완료·commit 후 발주. F/U `[xxx님]` / 3종 메시지 thread / prefill 1·2번 / 회의 제목 fix / IME 중복 fix.
 
 이전 전달 사항 (모두 반영 완료):
-- [2026-05-29] ngrok 차단 대응 — Cloudflare Quick Tunnel + Basic Auth 인프라 변경 — ✅ (working tree, `reports/DEV-REPORT-20260529.md`. A 보조 적용으로 vite가 backend/.env 직접 로드, 매 회의 export 절차 제거. 다음 주 실회의 검증만 남음)
+- [2026-05-15] 한 세션 다중 녹음 통합 단일 파일 — ✅ (commit `c95b308`, EBML segment 분기 + ffmpeg concat filter, 자동 6종+PM 실회의 통과)
+- [2026-05-29] ngrok 차단 대응 — Cloudflare Quick Tunnel + Basic Auth 인프라 변경 — ✅ (commit `3fca07b`, 자동/로컬/외부 접속 통과)
 - [2026-04-17] 디자인 시스템 v2 개편 — ✅
 - [2026-04-21~22] 실사용 피드백 기반 대량 변경 — ✅
 - [2026-04-23] 기획 동기화 10건 + 신규 2건 (템플릿 드래그, Slack 메시지 수정) — ✅
 - [2026-05-07] 녹음 파일 내보내기 + 사용자 보고 UI 수정 2건 — ✅ (commit `e262762`)
-- [2026-05-14] 저장 경로 폐기 + 브라우저 다운로드 일원화 — ✅ (working tree)
-- [2026-05-14] 히스토리 하단 3그룹 + 7단계 체크박스 모바일 — ✅ (working tree)
+- [2026-05-14] 저장 경로 폐기 + 브라우저 다운로드 일원화 — ✅ (commit `b0004fd`)
+- [2026-05-14] 히스토리 하단 3그룹 + 7단계 체크박스 모바일 — ✅ (commit `b0004fd`)
 
 새 기획 변경이 있으면 이 섹션에 기록.
 
 ### 검수→개발 전달 사항
 
-(현재 없음 — 05-14 QA-AUDIO-MERGE-LOSS 1+2 종결 + 05-29 ngrok 차단은 기획 세션 경유 처리 후 개발 반영 완료)
+(현재 없음)
 
 이전 검수 전달 사항 (모두 반영 완료):
-- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ working tree 반영, 단 ffmpeg silent failure로 부분 효과
-- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ **10번째 검수 세션(05-15) 통과 확정**: 코드 정합성 명세 100% 일치 + `session_20260515_0125c17a` 디스크 1:1 매칭(6,643,109 bytes) + PM 맥북 30분 실회의 정상. 상세 `reports/QA-REPORT-20260515.md`. 두 fix는 squash 권장
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ commit `1d0a8d7`에 squash
+- `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ commit `1d0a8d7` (10번째 검수 통과 + PM 맥북 30분 실회의 정상)
 - `QA-FIX/QA-SLACK-MD-PATH-20260507.md` — ✅ (commit `cd8f3d9`)
 - `QA-FIX/QA-SESSION-RACE-20260507.md` — ✅ (commit `69948e7`, 120분 실회의 통과로 종결 확정)
 - `QA-FIX/QA-REEDIT-AND-UX-20260424.md` — ✅
