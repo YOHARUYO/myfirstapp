@@ -413,7 +413,7 @@ const setBlockImportance = async (blockId: string, level: ImportanceLevel | null
 
 ### 🟡 M10: SendSave.tsx 더블 클릭 중복 전송
 
-**���일:** `frontend/src/pages/SendSave.tsx` — handleExecute / doExecute
+**파일:** `frontend/src/pages/SendSave.tsx` — handleExecute / doExecute
 
 **수정:** executing 플래그를 doExecute 최상단에서 즉시 설정:
 

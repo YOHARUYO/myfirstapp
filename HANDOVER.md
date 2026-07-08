@@ -580,7 +580,7 @@ myfirstapp/
 Sprint 4 완료 후 사용자 실사용에서 발견된 오류 및 개선 요청을 반영하여 decisions.md, technical-design.md, design-system.md를 대폭 수정함.
 
 **개발 세션이 수행해야 할 작업:**
-아래 3개 프롬프트 파일에 상세 지시가 있음. 순서대로 확인하고 ��영할 것.
+아래 3개 프롬프트 파일에 상세 지시가 있음. 순서대로 확인하고 반영할 것.
 
 1. **`reports/PLAN-DEV-HANDOFF-20260422.md`** — 기획 변경 6건 + 버그 7건 + 이전 미착수 확인 5건
 2. **`reports/PLAN-DEV-HANDOFF-20260422-2.md`** — 기획 변경 10건 + 디자인 1건 + 확인 1건
@@ -599,7 +599,7 @@ Sprint 4 완료 후 사용자 실사용에서 발견된 오류 및 개선 요청
 - `index.html`: Inter weight에 `700` 추가
 - Home.tsx: Display 40px/700, max-w-md, pt-20, 카드 bg-bg-subtle/rounded-xl/p-5, hover:bg-bg-hover, 버튼 px-5 py-3 font-semibold, 아이콘 size={32/20}
 - MeetingSetup.tsx: Display 40px/700 제목, 입력 필드 bg-bg-subtle + focus:ring-2, 세그먼트 컨트롤 배경색 기반, 드롭존 rounded-xl
-- Recording.tsx: 회의 제목을 Display 40px/700 주인공으로, 상태바를 Small(13px), ���사 블록 space-y-3, interim에 bg-bg-subtle 배경, ���튼 크기 상향
+- Recording.tsx: 회의 제목을 Display 40px/700 주인공으로, 상태바를 Small(13px), 전사 블록 space-y-3, interim에 bg-bg-subtle 배경, 버튼 크기 상향
 - 중요도 태깅 색상·Status 색상은 유지됨 (지시대로)
 - **브라우저 확인 필요**: http://localhost:5173/ 에서 시각 확인 부탁드립니다
 

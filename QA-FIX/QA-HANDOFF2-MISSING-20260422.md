@@ -84,7 +84,7 @@ export default function WizardLayout({
 ## 🟡 N2: 마이크 민감도 GainNode 오디오 증폭 미구현
 
 **파일:** `frontend/src/pages/Recording.tsx` + `frontend/src/hooks/useAudioStream.ts`
-**현재 상태:** 슬라이더 UI(`micSensitivity` state)는 있으나, 실제 오디오 스트��에 GainNode 증폭이 적용되지 않음. 슬라이더를 움직여도 녹음 품질이 변하지 않음.
+**현재 상태:** 슬라이더 UI(`micSensitivity` state)는 있으나, 실제 오디오 스트림에 GainNode 증폭이 적용되지 않음. 슬라이더를 움직여도 녹음 품질이 변하지 않음.
 
 **수정 방향:** `useAudioStream.ts`의 `startRecording`에서 GainNode를 연결하고, Recording.tsx에서 슬라이더 변경 시 gain 값을 업데이트.
 
