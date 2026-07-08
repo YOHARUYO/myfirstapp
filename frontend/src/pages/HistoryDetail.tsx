@@ -8,9 +8,19 @@ import Modal from '../components/common/Modal';
 import Toast from '../components/common/Toast';
 import { getMeeting } from '../api/history';
 import { deleteSlackMessage, updateSlackMessage } from '../api/slack';
+import type { SlackMessageKey } from '../api/slack';
 import { useSessionStore } from '../stores/sessionStore';
 import api from '../api/client';
-import type { Meeting, ActionItem, Session } from '../types';
+import type { Meeting, ActionItem, Session, SlackMessageRecord, SlackTopicMessageRecord } from '../types';
+
+// 수정 모달의 topic 항목 1건 (v2 — 주제 목록형)
+interface EditTopicEntry {
+  key: SlackMessageKey;
+  ts: string;
+  title: string;
+  text: string;
+  sent_at: string;
+}
 
 import { formatTs } from '../utils/formatTime';
 
@@ -34,8 +44,7 @@ export default function HistoryDetail() {
   const [deleteModal, setDeleteModal] = useState(false);
   const [editMsgModal, setEditMsgModal] = useState(false);
   const [editMainText, setEditMainText] = useState('');
-  const [editTopicsText, setEditTopicsText] = useState('');
-  const [editTopicsTs, setEditTopicsTs] = useState<string | null>(null);
+  const [editTopics, setEditTopics] = useState<EditTopicEntry[]>([]);
   const [editMainTs, setEditMainTs] = useState<string | null>(null);
   const [editHasLegacy, setEditHasLegacy] = useState(false);
   const [deleteMeetingModal, setDeleteMeetingModal] = useState(false);
@@ -95,16 +104,34 @@ export default function HistoryDetail() {
     return fromMessages || slackSent.message_ts || null;
   };
 
+  // slack_sent.messages.topics 정규화 — v2 배열 | legacy 단일 dict 모두 인식
+  const normalizeTopics = (
+    raw: SlackTopicMessageRecord[] | SlackMessageRecord | null | undefined,
+  ): EditTopicEntry[] => {
+    if (Array.isArray(raw)) {
+      return raw.map((t, i) => ({
+        key: `topic_${i}` as SlackMessageKey,
+        ts: t.ts,
+        title: (t as SlackTopicMessageRecord).title || `주제 ${i + 1}`,
+        text: t.text || '',
+        sent_at: t.sent_at || '',
+      }));
+    }
+    if (raw && raw.ts) {
+      // legacy 단일 dict (Phase 1B 저장본) — message_key 'topics'로 저장
+      return [{ key: 'topics', ts: raw.ts, title: '주요 논의 (전체)', text: raw.text || '', sent_at: raw.sent_at || '' }];
+    }
+    return [];
+  };
+
   const openEditMessageModal = () => {
     if (!meeting?.slack_sent) return;
     const ss = meeting.slack_sent;
     const mainMsg = ss.messages?.main;
-    const topicsMsg = ss.messages?.topics;
     const hasNewStructure = !!mainMsg?.text;
     setEditMainText(mainMsg?.text || '');
-    setEditTopicsText(topicsMsg?.text || '');
+    setEditTopics(normalizeTopics(ss.messages?.topics));
     setEditMainTs(mainMsg?.ts || ss.message_ts || null);
-    setEditTopicsTs(topicsMsg?.ts || null);
     setEditHasLegacy(!hasNewStructure);
     setEditMsgModal(true);
   };
@@ -116,10 +143,21 @@ export default function HistoryDetail() {
       if (editMainTs) {
         await updateSlackMessage(ss.channel_id, editMainTs, editMainText, meeting.meeting_id, 'main');
       }
-      if (editTopicsTs && editTopicsText.trim()) {
-        await updateSlackMessage(ss.channel_id, editTopicsTs, editTopicsText, meeting.meeting_id, 'topics');
+      const savedTopics = editTopics.filter((t) => t.ts && t.text.trim());
+      for (const t of savedTopics) {
+        await updateSlackMessage(ss.channel_id, t.ts, t.text, meeting.meeting_id, t.key);
       }
-      // 로컬 state 동기화
+      // 로컬 state 동기화 — topics는 저장본 구조(배열/legacy 단일) 그대로 재구성
+      const rawTopics = ss.messages?.topics;
+      let newTopics = rawTopics;
+      if (Array.isArray(rawTopics)) {
+        newTopics = rawTopics.map((orig, i) => {
+          const edited = savedTopics.find((t) => t.key === `topic_${i}`);
+          return edited ? { ...orig, text: edited.text } : orig;
+        });
+      } else if (rawTopics && savedTopics.length && savedTopics[0].key === 'topics') {
+        newTopics = { ...rawTopics, text: savedTopics[0].text };
+      }
       setMeeting({
         ...meeting,
         slack_sent: {
@@ -127,7 +165,7 @@ export default function HistoryDetail() {
           messages: {
             ...(ss.messages || {}),
             ...(editMainTs ? { main: { ts: editMainTs, text: editMainText, sent_at: ss.messages?.main?.sent_at || ss.sent_at || '' } } : {}),
-            ...(editTopicsTs && editTopicsText.trim() ? { topics: { ts: editTopicsTs, text: editTopicsText, sent_at: ss.messages?.topics?.sent_at || ss.sent_at || '' } } : {}),
+            topics: newTopics,
           },
         },
       });
@@ -476,7 +514,7 @@ export default function HistoryDetail() {
         </div>
       </div>
 
-      {/* Edit Slack message modal — main + topics 양쪽 prefill·편집 */}
+      {/* Edit Slack message modal — 주제 목록형 (v2): main + topic별 textarea */}
       <Modal open={editMsgModal} onClose={() => setEditMsgModal(false)}>
         <h3 className="text-lg font-semibold text-text mb-2">메시지 수정</h3>
         {editHasLegacy && (
@@ -484,19 +522,27 @@ export default function HistoryDetail() {
             이 회의는 이전 메시지 텍스트가 저장되지 않아 prefill을 제공하지 않습니다. 직접 작성해주세요.
           </p>
         )}
-        <div className="space-y-3">
+        <div className="space-y-3 max-h-[60vh] overflow-y-auto pr-1">
           <div>
             <label className="text-xs font-medium text-text-secondary block mb-1">1번 메인 메시지</label>
             <textarea value={editMainText} onChange={(e) => setEditMainText(e.target.value)}
               className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[120px]" rows={6} />
           </div>
-          {editTopicsTs && (
-            <div>
-              <label className="text-xs font-medium text-text-secondary block mb-1">2번 thread 메시지 (주요 논의 + F/U)</label>
-              <textarea value={editTopicsText} onChange={(e) => setEditTopicsText(e.target.value)}
+          {editTopics.map((topic, i) => (
+            <div key={topic.key}>
+              <label className="text-xs font-medium text-text-secondary block mb-1">
+                thread 회신 {i + 1} — {topic.title}
+              </label>
+              <textarea
+                value={topic.text}
+                onChange={(e) => {
+                  const next = [...editTopics];
+                  next[i] = { ...next[i], text: e.target.value };
+                  setEditTopics(next);
+                }}
                 className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[100px]" rows={5} />
             </div>
-          )}
+          ))}
         </div>
         <div className="flex gap-2 justify-end mt-4">
           <button onClick={() => setEditMsgModal(false)}

@@ -72,13 +72,24 @@ export interface SlackMessageRecord {
   sent_at: string;
 }
 
+// 슬랙 포맷 v2 (2026-07-08) — 주제별 thread 회신 1건
+export interface SlackTopicMessageRecord extends SlackMessageRecord {
+  title?: string;
+}
+
+// v2: main 1건 + topics 배열 (주제별 분할 전송).
+// legacy(Phase 1B) 저장본은 topics가 단일 객체 — 읽기에서 유니온으로 인식.
+export interface SlackMessagesInfo {
+  main?: SlackMessageRecord | null;
+  topics?: SlackTopicMessageRecord[] | SlackMessageRecord | null;
+}
+
 export interface SlackSentInfo {
   channel_id: string;
   channel_name: string;
   thread_ts: string | null;
-  // Phase 1B (2026-06-05) — multi-message 구조. 신규 전송은 이 dict 사용.
-  // key: "main" | "topics". 구 데이터에서는 빈 객체.
-  messages: Record<string, SlackMessageRecord>;
+  // Phase 1B (2026-06-05) multi-message 구조 → v2 (2026-07-08) topics 배열형 확장.
+  messages: SlackMessagesInfo;
   // Legacy fields — Phase 1B 이전 데이터 호환용.
   message_ts: string | null;
   sent_at: string | null;

@@ -13,6 +13,7 @@ import { getSession } from '../api/sessions';
 import api from '../api/client';
 import { listChannels, listMessages, sendSlackMessage, deleteSlackMessage, updateSlackMessage } from '../api/slack';
 import type { SlackChannel, SlackMessage } from '../api/slack';
+import type { ActionItem } from '../types';
 
 type SendMode = 'new' | 'thread';
 type TaskStatus = 'idle' | 'loading' | 'success' | 'error';
@@ -110,15 +111,103 @@ export default function SendSave() {
       .finally(() => setChannelsLoading(false));
   }, []);
 
+  // md → Slack mrkdwn 변환 — backend _md_to_mrkdwn과 동일 로직 (v2 §3.5)
+  const mdToMrkdwn = (text: string): string => {
+    const lines = text.split('\n').map((line) => {
+      const m = line.match(/^\s*#{2,6}\s+(.+)$/);
+      return m ? `*${m[1].trim()}*` : line;
+    });
+    return lines.join('\n').replace(/\*\*(.+?)\*\*/g, '*$1*');
+  };
+
+  // task 조각 — 기한이 있으면 맨 뒤 (~7/6) 형식 (v2 §2)
+  const fmtTaskPiece = (task: string, deadline: string | null) =>
+    deadline ? `${task} (~${deadline})` : task;
+
+  // 같은 인물 task가 인접하도록 정렬 — backend _sort_action_items_by_assignee와 동일 로직
+  const sortByAssignee = (arr: ActionItem[]): ActionItem[] => {
+    const firstSeen = new Map<string, number>();
+    arr.forEach((item, idx) => {
+      const key = item.assignee || '￿';
+      if (!firstSeen.has(key)) firstSeen.set(key, idx);
+    });
+    return [...arr].sort(
+      (a, b) => firstSeen.get(a.assignee || '￿')! - firstSeen.get(b.assignee || '￿')!,
+    );
+  };
+
+  // F/U 라인 — backend _build_fu_bullets와 동일 로직 (v2 변형 A: 안건별 그룹핑)
+  const buildFuBullets = (itemsIn: ActionItem[]): string[] => {
+    if (!itemsIn.length) return [];
+    const hasTopic = itemsIn.some((it) => it.source_topic);
+    if (!hasTopic) {
+      return sortByAssignee(itemsIn).map((item) => {
+        const piece = fmtTaskPiece(item.task, item.deadline);
+        return item.assignee ? `• [${item.assignee}님] ${piece}` : `• ${piece}`;
+      });
+    }
+    const groupOrder: (string | null)[] = [];
+    const groups = new Map<string | null, ActionItem[]>();
+    itemsIn.forEach((it) => {
+      const t = it.source_topic || null;
+      if (!groups.has(t)) { groups.set(t, []); groupOrder.push(t); }
+      groups.get(t)!.push(it);
+    });
+    const ordered = [
+      ...groupOrder.filter((t) => t !== null),
+      ...(groupOrder.includes(null) ? [null] : []),
+    ];
+    const lines: string[] = [];
+    let labelNo = 0;
+    for (const topic of ordered) {
+      const group = sortByAssignee(groups.get(topic)!);
+      if (topic !== null) { labelNo += 1; lines.push(`*${labelNo}. ${topic}*`); }
+      let i = 0;
+      while (i < group.length) {
+        const assignee = group[i].assignee;
+        if (!assignee) {
+          lines.push(`• ${fmtTaskPiece(group[i].task, group[i].deadline)}`);
+          i += 1;
+          continue;
+        }
+        const pieces = [fmtTaskPiece(group[i].task, group[i].deadline)];
+        let j = i + 1;
+        while (j < group.length && group[j].assignee === assignee) {
+          pieces.push(fmtTaskPiece(group[j].task, group[j].deadline));
+          j += 1;
+        }
+        lines.push(`• [${assignee}님] ${pieces.join(' / ')}`);
+        i = j;
+      }
+    }
+    return lines;
+  };
+
+  // 1번 메인 메시지 미리보기 — backend _build_main_message와 동일 로직 (v2)
   const buildPreviewText = () => {
     if (!session) return '';
     const header = `[${session.metadata.date} ${session.metadata.title}]`;
+    const md = typeof session.summary_markdown === 'string' ? session.summary_markdown : '';
+
+    // 핵심 요약 — '## 핵심 요약' 섹션(LLM 생성) 우선, 없으면 기계 추출 fallback
     const summaryBullets: string[] = [];
-    if (session.summary_markdown && typeof session.summary_markdown === 'string') {
-      const lines = session.summary_markdown.split('\n');
+    let insideCore = false;
+    for (const line of md.split('\n')) {
+      const stripped = line.trim();
+      if (stripped.startsWith('## ')) {
+        if (insideCore) break;
+        insideCore = stripped.includes('핵심 요약');
+        continue;
+      }
+      if (insideCore && stripped.startsWith('- ')) {
+        summaryBullets.push(`• ${mdToMrkdwn(stripped.slice(2).trim())}`);
+      }
+    }
+    if (!summaryBullets.length && md) {
+      // legacy fallback — 각 주제 첫 bullet 기계 추출
       let inTopic = false;
       let foundBullet = false;
-      for (const line of lines) {
+      for (const line of md.split('\n')) {
         if (line.startsWith('### ')) { inTopic = true; foundBullet = false; continue; }
         if (line.startsWith('## ')) { inTopic = false; continue; }
         if (inTopic && !foundBullet && line.trim().startsWith('- ') && !line.includes('F/U')) {
@@ -127,42 +216,52 @@ export default function SendSave() {
         }
       }
     }
-    // 같은 인물 task가 인접하도록 정렬 — backend _sort_action_items_by_assignee와 동일 로직
-    const items = [...(session.action_items || [])];
-    const firstSeen = new Map<string, number>();
-    items.forEach((item, idx) => {
-      const key = item.assignee || '￿';
-      if (!firstSeen.has(key)) firstSeen.set(key, idx);
-    });
-    items.sort((a, b) => (firstSeen.get(a.assignee || '￿')! - firstSeen.get(b.assignee || '￿')!));
-    const fuBullets = items.map((item) => {
-      let line = item.assignee ? `• [${item.assignee}님] ${item.task}` : `• ${item.task}`;
-      if (item.deadline) line += ` ~${item.deadline}`;
-      return line;
-    });
-    return `${header}\n\n📋 *핵심 요약*\n${summaryBullets.join('\n') || '(요약 없음)'}\n\n✅ *F/U 필요 사항*\n${fuBullets.join('\n') || '(없음)'}\n\n📎 전체 회의록 첨부`;
+
+    const fuBullets = buildFuBullets([...(session.action_items || [])]);
+    return `${header}\n\n📋 *핵심 요약*\n${summaryBullets.join('\n') || '(요약 없음)'}\n\n✅ *F/U 필요 사항*\n${fuBullets.join('\n') || '(없음)'}`;
   };
 
-  // 2번 thread 메시지 미리보기 — backend _build_topics_message와 동일 로직
-  const buildTopicsPreviewText = (): string => {
-    if (!session?.summary_markdown) return '';
-    const lines = session.summary_markdown.split('\n');
-    const out: string[] = [];
-    let inside = false;
-    for (const line of lines) {
+  // 주제별 thread 회신 미리보기 — backend _build_topic_messages와 동일 로직 (v2 §3.4)
+  const buildTopicPreviews = (): { title: string; text: string }[] => {
+    if (!session?.summary_markdown) return [];
+    const discussion: string[] = [];
+    const memo: string[] = [];
+    let current: string[] | null = null;
+    for (const line of session.summary_markdown.split('\n')) {
       const stripped = line.trim();
       if (stripped.startsWith('## ')) {
-        if (inside) break;
-        if (stripped.includes('주요 논의')) {
-          inside = true;
-          out.push(line);
-          continue;
-        }
+        if (stripped.includes('주요 논의')) { current = discussion; continue; }
+        if (stripped.includes('기타 메모')) { current = memo; memo.push(line); continue; }
+        current = null;
+        continue;
       }
-      if (inside) out.push(line);
+      if (current !== null) current.push(line);
     }
-    while (out.length && !out[out.length - 1].trim()) out.pop();
-    return out.join('\n').trim();
+
+    const result: { title: string; text: string }[] = [];
+    let topicTitle: string | null = null;
+    let topicLines: string[] = [];
+    const flush = () => {
+      if (topicTitle !== null) {
+        const body = [`### ${topicTitle}`, ...topicLines].join('\n').trim();
+        result.push({ title: topicTitle, text: mdToMrkdwn(body) });
+      }
+      topicTitle = null;
+      topicLines = [];
+    };
+    for (const line of discussion) {
+      const stripped = line.trim();
+      if (stripped.startsWith('### ')) { flush(); topicTitle = stripped.slice(4).trim(); continue; }
+      if (topicTitle !== null) topicLines.push(line);
+    }
+    flush();
+    if (!result.length && discussion.some((l) => l.trim())) {
+      result.push({ title: '주요 논의', text: mdToMrkdwn(discussion.join('\n').trim()) });
+    }
+    if (memo.some((l) => l.trim() && !l.trim().startsWith('## '))) {
+      result.push({ title: '기타 메모', text: mdToMrkdwn(memo.join('\n').trim()) });
+    }
+    return result;
   };
 
   // Load thread messages when switching to thread mode
@@ -616,12 +715,14 @@ export default function SendSave() {
                     <div className="text-xs font-medium text-text-secondary mb-2 font-sans">1번 메인 메시지</div>
                     {buildPreviewText()}
                   </div>
-                  {buildTopicsPreviewText() && (
-                    <div className="bg-bg-subtle rounded-xl p-4 text-sm text-text whitespace-pre-wrap font-mono">
-                      <div className="text-xs font-medium text-text-secondary mb-2 font-sans">2번 thread 메시지 (주요 논의 + F/U)</div>
-                      {buildTopicsPreviewText()}
+                  {buildTopicPreviews().map((p, i) => (
+                    <div key={i} className="bg-bg-subtle rounded-xl p-4 text-sm text-text whitespace-pre-wrap font-mono">
+                      <div className="text-xs font-medium text-text-secondary mb-2 font-sans">
+                        thread 회신 {i + 1} — {p.title}
+                      </div>
+                      {p.text}
                     </div>
-                  )}
+                  ))}
                 </div>
               )}
             </div>

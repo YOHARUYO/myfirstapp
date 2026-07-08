@@ -186,14 +186,23 @@ class SlackSendRequest(BaseModel):
     attach_md: bool = True
 
 
-def _action_item_fields(item) -> tuple[Optional[str], str, Optional[str]]:
-    """Normalize ActionItem (dict or model) → (assignee, task, deadline)."""
+def _action_item_fields(item) -> tuple[Optional[str], str, Optional[str], Optional[str]]:
+    """Normalize ActionItem (dict or model) → (assignee, task, deadline, topic).
+
+    topic은 추출 단계에서 보존된 source_topic (v2 안건별 그룹핑용, legacy는 None).
+    """
     if isinstance(item, dict):
-        return item.get("assignee"), item.get("task", ""), item.get("deadline")
+        return (
+            item.get("assignee"),
+            item.get("task", ""),
+            item.get("deadline"),
+            item.get("source_topic"),
+        )
     return (
         getattr(item, "assignee", None),
         getattr(item, "task", ""),
         getattr(item, "deadline", None),
+        getattr(item, "source_topic", None),
     )
 
 
@@ -204,7 +213,7 @@ def _sort_action_items_by_assignee(items: list) -> list:
     """
     first_seen: dict[str, int] = {}
     for idx, it in enumerate(items):
-        assignee, _, _ = _action_item_fields(it)
+        assignee = _action_item_fields(it)[0]
         key = assignee if assignee else "￿"  # None은 정렬 키 가장 뒤
         if key not in first_seen:
             first_seen[key] = idx
@@ -216,28 +225,136 @@ def _sort_action_items_by_assignee(items: list) -> list:
     )
 
 
+def _md_to_mrkdwn(text: str) -> str:
+    """표준 markdown → Slack mrkdwn 변환 (v2, PLAN-DEV-HANDOFF-20260708 §3.5).
+
+    - `**텍스트**` → `*텍스트*`
+    - 행 시작 `## 제목` / `### 제목` → `*제목*` (bold 줄)
+    - `- ` bullet / `---` 구분선 / `[xxx님]` / 이모지는 그대로 유지
+
+    슬랙 표현 계층 전용 — EXPORT_DIR의 .md 파일과 summary_markdown 저장본에는
+    절대 적용하지 않는다.
+    """
+    lines: list[str] = []
+    for line in text.split("\n"):
+        m = re.match(r"^\s*(#{2,6})\s+(.+)$", line)
+        if m:
+            lines.append(f"*{m.group(2).strip()}*")
+        else:
+            lines.append(line)
+    out = "\n".join(lines)
+    out = re.sub(r"\*\*(.+?)\*\*", r"*\1*", out)
+    return out
+
+
+def _extract_core_summary_bullets(md: str) -> list[str]:
+    """summary_markdown의 '## 핵심 요약' 섹션 bullet 텍스트 목록. 섹션이 없으면 []."""
+    bullets: list[str] = []
+    inside = False
+    for line in (md or "").split("\n"):
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            if inside:
+                break
+            inside = "핵심 요약" in stripped
+            continue
+        if inside and stripped.startswith("- "):
+            bullets.append(stripped[2:].strip())
+    return bullets
+
+
+def _format_task_piece(task: str, deadline: Optional[str]) -> str:
+    """task 조각 1개 — 기한이 있으면 맨 뒤에 (~7/6) 형식으로 붙인다."""
+    return f"{task} (~{deadline})" if deadline else task
+
+
+def _build_fu_bullets(items: list) -> list[str]:
+    """F/U 섹션 라인 목록 — v2 변형 A (PLAN-DEV-HANDOFF-20260708 §2).
+
+    topic(source_topic)이 하나라도 있으면 안건별 그룹핑:
+    `*N. 안건명*` bold 라벨 + 같은 인물 task ` / ` 한 줄 병합 + 기한 각 task 뒤 (~7/6).
+    담당자 미명시 task는 태그 없이 단독 bullet (병합 안 함).
+    전부 None(legacy)이면 기존 평탄 + 인물 인접 정렬 fallback.
+    """
+    items = list(items)
+    if not items:
+        return []
+
+    has_topic = any(_action_item_fields(it)[3] for it in items)
+    if not has_topic:
+        # legacy fallback — 평탄 리스트 + 인물 인접 정렬 (기한만 v2 괄호 형식)
+        lines: list[str] = []
+        for item in _sort_action_items_by_assignee(items):
+            assignee, task, deadline, _ = _action_item_fields(item)
+            piece = _format_task_piece(task, deadline)
+            lines.append(f"• [{assignee}님] {piece}" if assignee else f"• {piece}")
+        return lines
+
+    # 주제 출현 순서대로 그룹핑 — topic 없는 항목은 마지막 무라벨 그룹
+    group_order: list[Optional[str]] = []
+    groups: dict[Optional[str], list] = {}
+    for it in items:
+        topic = _action_item_fields(it)[3]
+        if topic not in groups:
+            groups[topic] = []
+            group_order.append(topic)
+        groups[topic].append(it)
+    if None in groups:
+        group_order = [t for t in group_order if t is not None] + [None]
+
+    lines = []
+    label_no = 0
+    for topic in group_order:
+        group = _sort_action_items_by_assignee(groups[topic])
+        if topic is not None:
+            label_no += 1
+            lines.append(f"*{label_no}. {topic}*")
+        i = 0
+        while i < len(group):
+            assignee, task, deadline, _ = _action_item_fields(group[i])
+            if not assignee:
+                lines.append(f"• {_format_task_piece(task, deadline)}")
+                i += 1
+                continue
+            pieces = [_format_task_piece(task, deadline)]
+            j = i + 1
+            while j < len(group):
+                a2, t2, d2, _ = _action_item_fields(group[j])
+                if a2 != assignee:
+                    break
+                pieces.append(_format_task_piece(t2, d2))
+                j += 1
+            lines.append(f"• [{assignee}님] {' / '.join(pieces)}")
+            i = j
+    return lines
+
+
 def _build_main_message(session: Session | Meeting, greeting: str = "", client=None) -> str:
-    """1번 메인 메시지 — 현재 형태 유지 + [xxx님] 태그 + 인물별 인접 정렬."""
+    """1번 메인 메시지 — v2 (PLAN-DEV-HANDOFF-20260708).
+
+    핵심 요약: summary_markdown의 '## 핵심 요약' 섹션(LLM 생성) 사용.
+    섹션이 없으면(구 회의 재전송·legacy) 기존 기계 추출 fallback.
+    F/U: 안건별 그룹핑 변형 A. '📎 전체 회의록 첨부' 문구는 .md initial_comment로 이동.
+    """
     header = f"[{session.metadata.date or ''} {session.metadata.title}]"
 
-    summary_bullets = []
-    if session.summary_markdown:
-        sections = session.summary_markdown.split("### ")
-        for section in sections[1:]:
-            lines = section.strip().split("\n")
-            for line in lines:
-                if line.strip().startswith("- ") and "F/U" not in line:
-                    summary_bullets.append(f"• {line.strip()[2:]}")
-                    break
+    core = _extract_core_summary_bullets(session.summary_markdown or "")
+    if core:
+        # 빌더가 직접 mrkdwn을 생성하므로 bullet 텍스트에만 방어적 변환 적용
+        summary_bullets = [f"• {_md_to_mrkdwn(b)}" for b in core]
+    else:
+        # legacy fallback — 각 주제 첫 bullet 기계 추출
+        summary_bullets = []
+        if session.summary_markdown:
+            sections = session.summary_markdown.split("### ")
+            for section in sections[1:]:
+                lines = section.strip().split("\n")
+                for line in lines:
+                    if line.strip().startswith("- ") and "F/U" not in line:
+                        summary_bullets.append(f"• {line.strip()[2:]}")
+                        break
 
-    sorted_items = _sort_action_items_by_assignee(list(session.action_items))
-    fu_bullets = []
-    for item in sorted_items:
-        assignee, task, deadline = _action_item_fields(item)
-        line = f"• [{assignee}님] {task}" if assignee else f"• {task}"
-        if deadline:
-            line += f" ~{deadline}"
-        fu_bullets.append(line)
+    fu_bullets = _build_fu_bullets(list(session.action_items))
 
     parts = [header]
     if greeting:
@@ -252,11 +369,8 @@ def _build_main_message(session: Session | Meeting, greeting: str = "", client=N
     if fu_bullets:
         parts.append("✅ *F/U 필요 사항*")
         parts.extend(fu_bullets)
-        parts.append("")
 
-    parts.append("📎 전체 회의록 첨부")
-
-    raw_message = "\n".join(parts)
+    raw_message = "\n".join(parts).rstrip()
 
     if client:
         def resolve_mention(match):
@@ -268,37 +382,69 @@ def _build_main_message(session: Session | Meeting, greeting: str = "", client=N
     return raw_message
 
 
-def _build_topics_message(session: Session | Meeting) -> Optional[str]:
-    """2번 thread 메시지 — '## 주요 논의 사항 & F/U 필요 요소' 섹션만 추출.
+def _build_topic_messages(session: Session | Meeting) -> list[tuple[str, str]]:
+    """주제별 thread 회신 목록 — v2 (PLAN-DEV-HANDOFF-20260708 §3.4).
 
-    빈 경우 None → 전송 라우터가 2번 메시지 자체를 생략.
+    '## 주요 논의 사항' 섹션을 `###` 주제 단위로 분할해 [(title, md_body), ...] 반환.
+    섹션 헤더('## 주요 논의...') 자체는 생략 — 각 메시지가 `*N. 주제명*`으로 시작.
+    '## 기타 메모' 섹션이 있으면 마지막 회신 1개로 추가.
+    빈 경우 [] → 전송 라우터가 회신 자체를 생략.
     """
     md = session.summary_markdown or ""
     if not md.strip():
-        return None
+        return []
 
-    lines = md.split("\n")
-    target_lines: list[str] = []
-    inside = False
-    for line in lines:
+    discussion: list[str] = []
+    memo: list[str] = []
+    current: Optional[list[str]] = None
+    for line in md.split("\n"):
         stripped = line.strip()
         if stripped.startswith("## "):
-            # 다음 ## 헤딩에 도달하면 섹션 종료
-            if inside:
-                break
             if "주요 논의" in stripped:
-                inside = True
-                target_lines.append(line)
+                current = discussion
+                continue  # 섹션 헤더는 생략
+            if "기타 메모" in stripped:
+                current = memo
+                memo.append(line)  # 헤딩 유지 → mrkdwn 변환 시 *기타 메모* bold 줄
                 continue
-        if inside:
-            target_lines.append(line)
+            current = None
+            continue
+        if current is not None:
+            current.append(line)
 
-    # 끝의 빈 줄 제거
-    while target_lines and not target_lines[-1].strip():
-        target_lines.pop()
+    result: list[tuple[str, str]] = []
 
-    body = "\n".join(target_lines).strip()
-    return body or None
+    # `###` 주제 단위 분할
+    topic_title: Optional[str] = None
+    topic_lines: list[str] = []
+
+    def flush():
+        nonlocal topic_title, topic_lines
+        if topic_title is not None:
+            body = "\n".join([f"### {topic_title}"] + topic_lines).strip()
+            result.append((topic_title, body))
+        topic_title = None
+        topic_lines = []
+
+    for line in discussion:
+        stripped = line.strip()
+        if stripped.startswith("### "):
+            flush()
+            topic_title = stripped[4:].strip()
+            continue
+        if topic_title is not None:
+            topic_lines.append(line)
+    flush()
+
+    # `###` 없는 비정형 요약(legacy) — 통짜 1건으로 폴백해 내용 유실 방지
+    if not result and any(l.strip() for l in discussion):
+        result.append(("주요 논의", "\n".join(discussion).strip()))
+
+    # 기타 메모 — 헤딩 외 실제 내용이 있을 때만 마지막 회신로 추가
+    if any(l.strip() and not l.strip().startswith("## ") for l in memo):
+        result.append(("기타 메모", "\n".join(memo).strip()))
+
+    return result
 
 
 # Legacy alias — 외부 import 호환용 (필요 시).
@@ -323,7 +469,7 @@ def send_slack_message(req: SlackSendRequest):
             pass
 
     main_text = _build_main_message(session, greeting, client=client)
-    topics_text = _build_topics_message(session)
+    topic_messages = _build_topic_messages(session)
 
     try:
         # 1번 메인 메시지 — 사용자 선택 thread가 있다면 그 thread에 들어감
@@ -334,17 +480,27 @@ def send_slack_message(req: SlackSendRequest):
         main_ts = result_main.get("ts", "")
         now_iso = datetime.now().isoformat()
 
-        # 2번 thread 메시지 — 1번 ts를 thread_ts로 (사용자 선택 thread가 아님)
-        topics_ts: Optional[str] = None
-        if topics_text:
-            result_topics = client.chat_postMessage(
+        # 주제별 thread 회신 — 주제 1개당 1건, 1번 ts를 thread_ts로 순차 전송 (v2)
+        topics_records: list[dict] = []
+        topics_ts: Optional[str] = None  # 첫 회신 ts — 응답 legacy 필드 호환용
+        for title, body in topic_messages:
+            mrkdwn_body = _md_to_mrkdwn(body)
+            result_topic = client.chat_postMessage(
                 channel=req.channel_id,
-                text=topics_text,
+                text=mrkdwn_body,
                 thread_ts=main_ts,
             )
-            topics_ts = result_topics.get("ts", "")
+            t_ts = result_topic.get("ts", "")
+            if topics_ts is None:
+                topics_ts = t_ts
+            topics_records.append({
+                "ts": t_ts,
+                "title": title,
+                "text": mrkdwn_body,
+                "sent_at": now_iso,
+            })
 
-        # 3번 .md 첨부 — 1번 ts를 thread_ts로 (현재 동작 유지, parent만 main_ts로)
+        # 마지막 .md 첨부 — 1번 ts를 thread_ts로 + 첨부 안내 코멘트 (v2 §3.6)
         md_attached = False
         if req.attach_md:
             title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
@@ -357,6 +513,7 @@ def send_slack_message(req: SlackSendRequest):
                     file=str(md_file),
                     filename=filename,
                     thread_ts=main_ts,
+                    initial_comment="📎 전체 회의록 첨부합니다",
                 )
                 md_attached = True
 
@@ -377,12 +534,9 @@ def send_slack_message(req: SlackSendRequest):
             "deleted": False,
             "deleted_at": None,
         }
-        if topics_text and topics_ts:
-            slack_sent_dict["messages"]["topics"] = {
-                "ts": topics_ts,
-                "text": topics_text,
-                "sent_at": now_iso,
-            }
+        if topics_records:
+            # v2 — 항상 배열로 기록 (legacy 단일 dict는 읽기에서만 인식)
+            slack_sent_dict["messages"]["topics"] = topics_records
 
         # 재전송 흐름(mtg_*)에서는 meeting JSON 직접 갱신.
         # 신규 작성 흐름은 sessions.py의 complete_session이 응답을 받아 Meeting 생성 시 포함.
@@ -421,8 +575,9 @@ class SlackUpdateRequest(BaseModel):
     channel_id: str
     message_ts: str
     text: str
-    # Phase 1B — 저장본 갱신용. meeting_id + message_key("main"|"topics") 함께 오면
-    # meeting JSON의 slack_sent.messages[message_key].text도 동기화.
+    # Phase 1B — 저장본 갱신용. meeting_id + message_key 함께 오면
+    # meeting JSON의 slack_sent.messages 해당 항목 text도 동기화.
+    # v2 message_key: "main" | "topic_{i}"(topics 배열 인덱스) | "topics"(legacy 단일 dict)
     meeting_id: Optional[str] = None
     message_key: Optional[str] = None
 
@@ -442,7 +597,8 @@ def update_slack_message(req: SlackUpdateRequest):
         raise HTTPException(status_code=500, detail=f"수정 실패: {error_str}")
 
     # meeting JSON 저장본 갱신 (선택적)
-    if req.meeting_id and req.message_key in ("main", "topics"):
+    topic_idx_match = re.match(r"^topic_(\d+)$", req.message_key or "")
+    if req.meeting_id and (req.message_key in ("main", "topics") or topic_idx_match):
         import json as _j
         from datetime import datetime as _dt
         meeting_path = MEETINGS_DIR / f"{req.meeting_id}.json"
@@ -451,9 +607,19 @@ def update_slack_message(req: SlackUpdateRequest):
                 m_data = _j.loads(meeting_path.read_text(encoding="utf-8"))
                 slack_sent = m_data.get("slack_sent") or {}
                 messages = slack_sent.get("messages") or {}
-                entry = messages.get(req.message_key) or {"ts": req.message_ts, "sent_at": _dt.now().isoformat()}
-                entry["text"] = req.text
-                messages[req.message_key] = entry
+                if topic_idx_match:
+                    # v2 — topics 배열의 해당 인덱스 갱신
+                    topics = messages.get("topics")
+                    idx = int(topic_idx_match.group(1))
+                    if isinstance(topics, list) and 0 <= idx < len(topics):
+                        topics[idx]["text"] = req.text
+                elif req.message_key == "topics" and isinstance(messages.get("topics"), list):
+                    # v2 배열 저장본에 legacy 키가 오면 무시 (topic_{i}를 사용해야 함)
+                    pass
+                else:
+                    entry = messages.get(req.message_key) or {"ts": req.message_ts, "sent_at": _dt.now().isoformat()}
+                    entry["text"] = req.text
+                    messages[req.message_key] = entry
                 slack_sent["messages"] = messages
                 m_data["slack_sent"] = slack_sent
                 meeting_path.write_text(_j.dumps(m_data, indent=2, ensure_ascii=False), encoding="utf-8")

@@ -31,14 +31,21 @@ export interface SlackSendResult {
   message_ts: string;
   thread_ts: string | null;
   md_attached: boolean | null;
-  // Phase 1B — multi-message 전송 결과
+  // Phase 1B — multi-message 전송 결과. v2에서 topics_ts는 첫 회신 ts.
   main_ts?: string;
   topics_ts?: string | null;
   slack_sent?: {
     channel_id: string;
     channel_name: string;
     thread_ts: string | null;
-    messages: Record<string, { ts: string; text: string; sent_at: string }>;
+    // v2 — main 1건 + topics 배열(주제별 회신). legacy 응답은 topics 단일 객체.
+    messages: {
+      main?: { ts: string; text: string; sent_at: string } | null;
+      topics?:
+        | Array<{ ts: string; title?: string; text: string; sent_at: string }>
+        | { ts: string; text: string; sent_at: string }
+        | null;
+    };
     message_ts: string;
     sent_at: string;
     deleted: boolean;
@@ -71,12 +78,15 @@ export async function deleteSlackMessage(
   return res.data;
 }
 
+// v2 message_key: 'main' | 'topic_{i}'(topics 배열 인덱스) | 'topics'(legacy 단일)
+export type SlackMessageKey = 'main' | 'topics' | `topic_${number}`;
+
 export async function updateSlackMessage(
   channelId: string,
   messageTs: string,
   text: string,
   meetingId?: string,
-  messageKey?: 'main' | 'topics',
+  messageKey?: SlackMessageKey,
 ): Promise<{ success: boolean; message_ts: string }> {
   const res = await api.patch('/slack/message', {
     channel_id: channelId,

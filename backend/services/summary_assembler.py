@@ -102,9 +102,12 @@ def extract_action_items(summary_markdown: str) -> list[dict]:
                     assignee = legacy_match.group(1)
                     assignee_match = legacy_match
 
-            # Extract ~deadline
+            # Extract deadline — v2 괄호 형태 "(~7/6)" 우선 (PLAN-DEV-HANDOFF-20260708),
+            # 구형 "~6/2" / "~06/02" / "~2026-06-02"는 fallback (legacy 재요약 호환)
             deadline = None
-            deadline_match = re.search(r"[~～](\d{2}/\d{2}|\d{4}-\d{2}-\d{2})", text)
+            deadline_match = re.search(r"\(\s*[~～]\s*([^)]+?)\s*\)", text)
+            if not deadline_match:
+                deadline_match = re.search(r"[~～]\s*(\d{1,2}/\d{1,2}|\d{4}-\d{2}-\d{2})", text)
             if deadline_match:
                 deadline = deadline_match.group(1)
 
