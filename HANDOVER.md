@@ -21,7 +21,7 @@
 | 개발 환경 | ✅ 완료 | Python 3.14.4, Node 24.13.1, ffmpeg 8.1, Windows 11 |
 | API 키/토큰 | ✅ 완료 | `backend/.env` (Anthropic API Key + Slack Bot Token) |
 | Slack Bot | ✅ 완료 | `@meetingRecorder`, "전략팀" 채널 참여 확인됨 |
-| **코드 구현** | **Sprint 2 완료** | 아래 "현재 구현 완료 항목" 참조 |
+| **코드 구현** | **Sprint 1~5 + Phase 1A·1B + 슬랙 포맷 v2 완료** | 아래 "현재 구현 완료 항목" 참조 (2026-07-08 기준) |
 
 ---
 
@@ -221,41 +221,35 @@ cloudflared tunnel --url http://localhost:5173
 
 ---
 
-## 8. 현재 구현 완료 항목 (2026-06-02 기준)
+## 8. 현재 구현 완료 항목 (2026-07-08 기준)
 
-> **마지막 업데이트**: 2026-06-02 (분할 커밋 4건 + multi-segment audio 1건 push 완료. 06-01 LLM 확장성 검토 + 06-02 Phase 1A·1B 핸드오프 작성 완료. **Phase 1A 개발 세션 진행 중**)
-> **최신 커밋**: `c95b308` (다중 녹음 통합 단일 파일 — EBML segment 분기 + ffmpeg concat filter, PLAN-DEV-HANDOFF-20260515) — origin/master push 완료
-> **Working tree 미커밋**: reports/ 6개 untracked (06-01·02 기획·개발 세션 산출물, 코드 변경 0)
->   - `reports/DEV-REPORT-20260602.md` — 06-01·02 개발 세션 총괄(분할 커밋 4건 + multi-segment)
->   - `reports/PLAN-REPORT-20260601.md` — LLM 확장성 검토 본문
->   - `reports/PLAN-REPORT-20260602.md` — 06-02 결정 종합 (Phase 분할 확정)
->   - `reports/PLAN-DEV-HANDOFF-20260602-2.md` — Phase 1A 핸드오프 (LLM 추상화 + 모델 ID 동적 fix)
->   - `reports/PLAN-DEV-HANDOFF-20260602.md` — Phase 1B 핸드오프 (슬랙 포맷 4건 + prefill + 버그 2건)
->   - `reports/PLAN-SESSION-RESUME-20260602.md` — 다음 기획 세션 인수인계
-> **현재 진행 중**: Phase 1A 개발 세션 (LLM provider 추상화 골격 + Claude provider + 모델 ID 동적 fix)
-> **최근 커밋 5건 (모두 origin push 완료):**
-> - `c95b308` — 다중 녹음 통합 단일 파일 (EBML segment 분기 + ffmpeg concat filter, PLAN-DEV-HANDOFF-20260515)
-> - `3fca07b` — ngrok→cloudflared + Basic Auth 인프라 변경 (PLAN-DEV-HANDOFF-20260529)
-> - `e9244ed` — 05-15 기획 결정 — 한 세션 다중 녹음 통합 단일 파일 (저장구조 1-C + 병합 2-A)
-> - `1d0a8d7` — 녹음 파일 99.93% 손실 근본 fix — raw binary concat (QA-AUDIO-MERGE-LOSS 1+2)
-> - `b0004fd` — 저장 경로 폐기 + 브라우저 다운로드 일원화 + UI 회귀 (PLAN-DEV-HANDOFF-20260514 + -2)
+> **마지막 업데이트**: 2026-07-08 (3주 적체 미결 일괄 해소 — Phase 1B commit + QA-FIX 모델 retire + 슬랙 포맷 v2 결정→개발→검수 당일 완결)
+> **최신 코드 커밋**: `a311651` (슬랙 포맷 v2 — 핵심 요약 LLM 생성 + F/U 안건 그룹핑 + 주제별 분할 + mrkdwn 변환, PLAN-DEV-HANDOFF-20260708) — **origin push 완료 (07-08 PM 확인)**. 그 위에 07-08 세션 문서 일괄 commit 1건 (push 대기)
+> **Working tree 미커밋**: 없음 (07-08 문서 일괄 commit로 정리. `_to_delete/`만 git 외 잔존 — PM 직접 삭제 대상)
+> **현재 진행 중**: 없음 — 다음 안건은 모델명 등록 논의(기획) → Phase 2 핸드오프
+> **최근 코드 커밋 5건 (`a311651`까지 모두 origin push 완료 — 07-08 PM 확인):**
+> - `a311651` — 슬랙 포맷 v2 (8 files, PLAN-DEV-HANDOFF-20260708)
+> - `8d1a78c` — Claude 모델 retire 대응 — placeholder/default(`claude-sonnet-4-6`) + 한국어 404 안내 (QA-FIX-CLAUDE-MODEL-RETIRE-20260616)
+> - `279dfc2` — 06-01~06-16 세션 문서 12건 일괄
+> - `6a55ebd` — Phase 1B 코드 10파일: 슬랙 3종 thread + [xxx님] 태그 + prefill + 회의 제목 fix + IME 가드 (PLAN-DEV-HANDOFF-20260602)
+> - `1a5b570` — Phase 1A: LLM provider 추상화 + 모델 ID 동적 로딩 (PLAN-DEV-HANDOFF-20260602-2)
 >
-> **검증 완료 (검수 세션 통과 + PM 실회의):**
-> - QA-SESSION-RACE: 200 worker 동시 append 시뮬 + **120분 실회의 통과** → race·응답 지연 종결 확정
-> - QA-SLACK-MD-PATH: 사용자 시나리오 1 직접 확인 → Slack 채널에 .md 첨부 정상
-> - 모바일 회귀(히스토리 5버튼 + 7단계 체크박스): 기획 결정 + 코드 반영 완료
-> - **🔴 QA-AUDIO-MERGE-LOSS 1+2 (raw binary concat)**: 10번째 검수 통과 + PM 맥북 30분 실회의 정상 (commit `1d0a8d7`)
-> - **multi-segment 단일 파일 (commit `c95b308`)**: 자동 검증 6종 + PM 실회의 검증 통과 (`reports/DEV-REPORT-20260602.md` §4)
-> - **05-29 ngrok→cloudflared (commit `3fca07b`)**: 자동/로컬/외부 접속 통과 + 실회의 검증 (1주 안정 운영 후 ngrok 폐기 예정)
+> **검증 완료 (누적):**
+> - **슬랙 포맷 v2 (`a311651`)**: 자동 검증 25건 + PM 검수 완료 (실전송 확인, 별도 QA-REPORT 없음 — legacy 호환 3종은 다음 검수 세션 스팟 체크 후보)
+> - **QA-FIX 모델 retire (`8d1a78c`)**: 자동 검증 9종 + `models.list()` 실호출 교차 확인. MacBook 신규 셋업의 retire 재발 위험 해소
+> - **Phase 1A (`1a5b570`)**: 06-16 모델 retire 장애에서 "코드 변경·재시작 없이 즉시 복구"로 가치 실증 (`reports/QA-REPORT-20260616.md`)
+> - **Phase 1B (`6a55ebd`)**: 자동 검증 9종 + 한 달 실회의 운영 누적 (06-05 개발 후 07-08 commit)
+> - 이전 누적: QA-SESSION-RACE(120분 실회의) / QA-AUDIO-MERGE-LOSS 1+2(`1d0a8d7`) / multi-segment(`c95b308`) / cloudflared(`3fca07b`)
 >
-> **다음 검수 액션 (대기)**:
-> - **Phase 1A 개발 완료 후 검수 발주** — 회귀 무손 핵심(provider 미설정/claude 기본값이 현재와 byte-identical 동작)
-> - Phase 1B 발주는 Phase 1A 검수 통과·commit 후
+> **다음 액션 (대기)**:
+> - **모델명 등록 논의** (기획, 다음 세션 첫 안건) — 모델 ID 저장 시 검증 UI / placeholder 동적화 (`reports/QA-REPORT-20260616.md` §5-3)
+> - **Phase 2 핸드오프 작성** — Local provider(Ollama) + 요약 포맷·프롬프트 + MacBook Whisper. PM의 MacBook 시점 결정 대기. 이월 검증 2건(cloudflared 실회의 누적 / multi-segment 맥북 실회의) 동시 수행 검토
+> - v2 실사용 피드백 수집 (다음 실회의 전송분 — 핵심 요약 품질·그룹핑)
 > - 잔여 🟡 5건 재배치 (Part D 2 / 환경 의존 2 / 미리보기 1)
 >
-> **상태**: 05-15 multi-segment audio 개발·검증·commit 모두 완료(`c95b308`). 05-29 인프라 변경 commit 완료(`3fca07b`, 실회의 검증 통과). **Phase 1A 개발 진행 중** → 완료 후 검수 → commit → Phase 1B 발주 → 같은 사이클 → 이후 Phase 2(MacBook 환경) 핸드오프 작성.
+> **상태**: Phase 1A·1B + QA-FIX retire + 슬랙 포맷 v2 모두 commit·검증 완료. 발주 대기 0건. 다음 사이클: 모델명 등록 논의 → (필요 시 발주) → Phase 2(MacBook 환경) → Phase 3(Gemini) → Phase 4(OpenAI, 선택).
 
-### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기 + 저장 경로 폐기 + 녹음 raw concat + multi-segment 단일 파일
+### Sprint 1~5 전체 완료 ✅ + QA 전수 조사 + 기획 변경 + 재편집/UX + 녹음 안정성 + Slack MD 경로 + session.json race + 녹음 파일 내보내기 + 저장 경로 폐기 + 녹음 raw concat + multi-segment 단일 파일 + LLM provider 추상화(Phase 1A·1B) + 모델 retire 대응 + 슬랙 포맷 v2
 
 모든 스프린트 구현 + QA 전수 조사(100건+) + 기획 변경 반영 + 재편집 근본 수정 + UX 개선 + 장시간 녹음 안정성 + Slack MD 첨부 경로 통일 + 30분+ 녹음 race 근본 수정 + 녹음 파일 내보내기 신규 기능 + 저장 경로 폐기·브라우저 다운로드 일원화 + 녹음 파일 99.93% 손실 근본 fix(raw binary concat) + 한 세션 다중 녹음 통합 단일 파일(EBML segment 분기 + ffmpeg concat filter)까지 마무리된 상태.
 
@@ -383,11 +377,17 @@ cloudflared tunnel --url http://localhost:5173
 
 ### 기획→개발 전달 사항
 
-**[2026-06-02] Phase 1A — LLM 추상화 골격 + Claude provider + 모델 ID 동적 fix**: `reports/PLAN-DEV-HANDOFF-20260602-2.md` — 🔵 **개발 진행 중**. `services/llm/{base, claude, factory}` 신규 + `claude_service` 호환 래퍼 + 설정 UI provider 드롭다운 + 모델 ID 동적 fix. **회귀 무손이 핵심** (provider 미설정/claude 기본값 동작이 현재와 byte-identical).
+(현재 없음 — 다음 발주는 모델명 등록 논의 결과 또는 Phase 2 핸드오프)
 
-**[2026-06-02] Phase 1B — 슬랙 포맷 4건 + prefill + 버그 2건**: `reports/PLAN-DEV-HANDOFF-20260602.md` — ⏳ Phase 1A 완료·commit 후 발주. F/U `[xxx님]` 평탄+인접정렬 / 슬랙 3종 메시지 thread(메인+회신2) / prefill(1·2번, 서버 저장) / 회의 제목 변경 미반영 fix / IME "님 님" 중복 fix(isComposing 가드).
+이전 전달 사항 (모두 반영 완료):
 
-이전 전달 사항 11건 (모두 반영 완료):
+**[2026-07-08] 슬랙 포맷 v2** — `reports/PLAN-DEV-HANDOFF-20260708.md` — ✅ (commit `a311651`, 자동 25건 + PM 검수 완료. 핵심 요약 LLM 생성 / F/U 안건 그룹핑 변형 A / initial_comment / 주제별 분할 / mrkdwn 변환 / 프롬프트 보강 2건. 구현 노트: topic 필드는 기존 `source_topic` 활용 — `reports/DEV-REPORT-20260708-2.md` §3-1)
+
+**[2026-06-02] Phase 1A — LLM 추상화 골격 + Claude provider + 모델 ID 동적 fix**: `reports/PLAN-DEV-HANDOFF-20260602-2.md` — ✅ (commit `1a5b570`, 06-05. 06-16 retire 장애 대응으로 가치 실증)
+
+**[2026-06-02] Phase 1B — 슬랙 포맷 4건 + prefill + 버그 2건**: `reports/PLAN-DEV-HANDOFF-20260602.md` — ✅ (개발 06-05, commit `6a55ebd` 07-08 정리. 슬랙 3종 thread / [xxx님] / prefill / 회의 제목 fix / IME 가드)
+
+그 이전 전달 사항 11건 (모두 반영 완료):
 0. `reports/PLAN-DEV-HANDOFF-20260515.md` — ✅ (commit `c95b308`, multi-segment 단일 파일: EBML segment 분기 + ffmpeg concat filter, 자동 6종+PM 실회의 통과)
 1. `reports/PLAN-DEV-HANDOFF-20260529.md` — ✅ (commit `3fca07b`, ngrok→cloudflared + Basic Auth)
 2. `reports/PLAN-DEV-HANDOFF-20260422.md` — ✅
@@ -403,9 +403,10 @@ cloudflared tunnel --url http://localhost:5173
 
 ### 검수→개발 전달 사항
 
-(현재 없음 — 05-15 multi-segment audio는 c95b308 commit 시점 PM 실회의 통과로 단독 commit, 별도 검수 세션 발주는 Phase 1A 완료 후 함께 진행 검토)
+(현재 없음)
 
 이전 검수 전달 사항 (모두 반영 완료):
+- `QA-FIX/QA-CLAUDE-MODEL-RETIRE-20260616.md` (모델 retire leftover 5건) — ✅ commit `8d1a78c` (07-08. default `claude-sonnet-4-6` + placeholder 갱신 + 한국어 404 안내. 자동 검증 9종)
 - `reports/QA-TO-PLAN-NGROK-REPLACE-20260529.md` (ngrok 차단 진단) — ✅ 기획 경유 처리 → commit `3fca07b`
 - `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ commit `1d0a8d7`에 squash. 단 ffmpeg silent failure로 부분 효과 → 2차 fix가 마지막 단계
 - `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ commit `1d0a8d7` (10번째 검수 세션 통과 + PM 맥북 30분 실회의 정상)
@@ -489,11 +490,12 @@ myfirstapp/
 
 ### 기획→개발 전달 사항
 
-**[2026-06-02] Phase 1A — LLM 추상화 + 모델 ID 동적 fix** — `reports/PLAN-DEV-HANDOFF-20260602-2.md` 🔵 **개발 진행 중**. services/llm/* 신규 + claude_service 호환 래퍼 + 설정 UI provider 드롭다운 + 회귀 무손.
-
-**[2026-06-02] Phase 1B — 슬랙 포맷 4건 + prefill + 버그 2건** — `reports/PLAN-DEV-HANDOFF-20260602.md` ⏳ Phase 1A 완료·commit 후 발주. F/U `[xxx님]` / 3종 메시지 thread / prefill 1·2번 / 회의 제목 fix / IME 중복 fix.
+(현재 없음 — 다음 발주는 모델명 등록 논의 결과 또는 Phase 2 핸드오프)
 
 이전 전달 사항 (모두 반영 완료):
+- [2026-07-08] 슬랙 포맷 v2 — ✅ (commit `a311651`, `reports/PLAN-DEV-HANDOFF-20260708.md`. 핵심 요약 LLM 생성 / F/U 안건 그룹핑 / initial_comment / 주제별 분할 / mrkdwn 변환)
+- [2026-06-02] Phase 1A — LLM 추상화 + 모델 ID 동적 fix — ✅ (commit `1a5b570`, `reports/PLAN-DEV-HANDOFF-20260602-2.md`)
+- [2026-06-02] Phase 1B — 슬랙 포맷 4건 + prefill + 버그 2건 — ✅ (commit `6a55ebd`, `reports/PLAN-DEV-HANDOFF-20260602.md`)
 - [2026-05-15] 한 세션 다중 녹음 통합 단일 파일 — ✅ (commit `c95b308`, EBML segment 분기 + ffmpeg concat filter, 자동 6종+PM 실회의 통과)
 - [2026-05-29] ngrok 차단 대응 — Cloudflare Quick Tunnel + Basic Auth 인프라 변경 — ✅ (commit `3fca07b`, 자동/로컬/외부 접속 통과)
 - [2026-04-17] 디자인 시스템 v2 개편 — ✅
@@ -510,6 +512,7 @@ myfirstapp/
 (현재 없음)
 
 이전 검수 전달 사항 (모두 반영 완료):
+- `QA-FIX/QA-CLAUDE-MODEL-RETIRE-20260616.md` (모델 retire leftover 5건) — ✅ commit `8d1a78c` (07-08)
 - `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514.md` (1차 fix, libopus 재인코딩) — ✅ commit `1d0a8d7`에 squash
 - `QA-FIX/QA-AUDIO-MERGE-LOSS-20260514-2.md` (2차 fix, raw binary concat 전면 교체) — ✅ commit `1d0a8d7` (10번째 검수 통과 + PM 맥북 30분 실회의 정상)
 - `QA-FIX/QA-SLACK-MD-PATH-20260507.md` — ✅ (commit `cd8f3d9`)
@@ -668,8 +671,4 @@ Sprint 4 완료 후 사용자 실사용에서 발견된 오류 및 개선 요청
 7. **세션 종료 시 `reports/DEV-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조). 다음 세션에 명시적 인수인계가 필요하면 `reports/DEV-SESSION-RESUME-YYYYMMDD.md`도 함께 작성
 
 ### 검수(QA) 세션
-1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동 로드됨
-2. 첫 메시지: **"HANDOVER.md를 읽어줘. 검수 세션이야."**
-3. 기획 문서(decisions.md, technical-design.md) 기준으로 코드 전수 검사
-4. 발견 이슈를 심각도별로 분류하여 보고
-5. **세션 종료 시 `reports/QA-REPORT-YYYYMMDD.md` 작성** (11절 양식 참조)
+1. 이 프로젝트 폴더에서 Claude Code를 열면 `CLAUDE.md`가 자동
