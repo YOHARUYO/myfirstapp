@@ -186,11 +186,40 @@ class SlackSendRequest(BaseModel):
     attach_md: bool = True
 
 
-def _build_slack_message(session: Session, greeting: str = "", client=None) -> str:
-    """Build Slack message text from session summary."""
+def _action_item_fields(item) -> tuple[Optional[str], str, Optional[str]]:
+    """Normalize ActionItem (dict or model) → (assignee, task, deadline)."""
+    if isinstance(item, dict):
+        return item.get("assignee"), item.get("task", ""), item.get("deadline")
+    return (
+        getattr(item, "assignee", None),
+        getattr(item, "task", ""),
+        getattr(item, "deadline", None),
+    )
+
+
+def _sort_action_items_by_assignee(items: list) -> list:
+    """같은 assignee의 task가 인접하도록 안정 정렬. None assignee는 끝으로.
+
+    출현 순서를 유지하면서 assignee별로 묶음 — 회의 진행 순서대로 인물이 등장하는 자연 흐름 보존.
+    """
+    first_seen: dict[str, int] = {}
+    for idx, it in enumerate(items):
+        assignee, _, _ = _action_item_fields(it)
+        key = assignee if assignee else "￿"  # None은 정렬 키 가장 뒤
+        if key not in first_seen:
+            first_seen[key] = idx
+    return sorted(
+        items,
+        key=lambda it: (
+            first_seen[(_action_item_fields(it)[0] or "￿")],
+        ),
+    )
+
+
+def _build_main_message(session: Session | Meeting, greeting: str = "", client=None) -> str:
+    """1번 메인 메시지 — 현재 형태 유지 + [xxx님] 태그 + 인물별 인접 정렬."""
     header = f"[{session.metadata.date or ''} {session.metadata.title}]"
 
-    # Extract topic summaries: ### N. 주제 아래 첫 번째 논의 불릿만
     summary_bullets = []
     if session.summary_markdown:
         sections = session.summary_markdown.split("### ")
@@ -201,18 +230,11 @@ def _build_slack_message(session: Session, greeting: str = "", client=None) -> s
                     summary_bullets.append(f"• {line.strip()[2:]}")
                     break
 
+    sorted_items = _sort_action_items_by_assignee(list(session.action_items))
     fu_bullets = []
-    for item in session.action_items:
-        # dict 또는 pydantic 모델 모두 지원
-        if isinstance(item, dict):
-            assignee = item.get("assignee")
-            task = item.get("task", "")
-            deadline = item.get("deadline")
-        else:
-            assignee = getattr(item, "assignee", None)
-            task = getattr(item, "task", "")
-            deadline = getattr(item, "deadline", None)
-        line = f"• [@{assignee}] {task}" if assignee else f"• {task}"
+    for item in sorted_items:
+        assignee, task, deadline = _action_item_fields(item)
+        line = f"• [{assignee}님] {task}" if assignee else f"• {task}"
         if deadline:
             line += f" ~{deadline}"
         fu_bullets.append(line)
@@ -236,7 +258,6 @@ def _build_slack_message(session: Session, greeting: str = "", client=None) -> s
 
     raw_message = "\n".join(parts)
 
-    # <@UXXXXXX> → @display_name 치환
     if client:
         def resolve_mention(match):
             uid = match.group(1)
@@ -245,6 +266,43 @@ def _build_slack_message(session: Session, greeting: str = "", client=None) -> s
         raw_message = re.sub(r'<@(\w+)>', resolve_mention, raw_message)
 
     return raw_message
+
+
+def _build_topics_message(session: Session | Meeting) -> Optional[str]:
+    """2번 thread 메시지 — '## 주요 논의 사항 & F/U 필요 요소' 섹션만 추출.
+
+    빈 경우 None → 전송 라우터가 2번 메시지 자체를 생략.
+    """
+    md = session.summary_markdown or ""
+    if not md.strip():
+        return None
+
+    lines = md.split("\n")
+    target_lines: list[str] = []
+    inside = False
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("## "):
+            # 다음 ## 헤딩에 도달하면 섹션 종료
+            if inside:
+                break
+            if "주요 논의" in stripped:
+                inside = True
+                target_lines.append(line)
+                continue
+        if inside:
+            target_lines.append(line)
+
+    # 끝의 빈 줄 제거
+    while target_lines and not target_lines[-1].strip():
+        target_lines.pop()
+
+    body = "\n".join(target_lines).strip()
+    return body or None
+
+
+# Legacy alias — 외부 import 호환용 (필요 시).
+_build_slack_message = _build_main_message
 
 
 @router.post("/send")
@@ -264,20 +322,29 @@ def send_slack_message(req: SlackSendRequest):
         except Exception:
             pass
 
-    message_text = _build_slack_message(session, greeting, client=client)
+    main_text = _build_main_message(session, greeting, client=client)
+    topics_text = _build_topics_message(session)
 
     try:
-        kwargs = {
-            "channel": req.channel_id,
-            "text": message_text,
-        }
+        # 1번 메인 메시지 — 사용자 선택 thread가 있다면 그 thread에 들어감
+        main_kwargs = {"channel": req.channel_id, "text": main_text}
         if req.thread_ts:
-            kwargs["thread_ts"] = req.thread_ts
+            main_kwargs["thread_ts"] = req.thread_ts
+        result_main = client.chat_postMessage(**main_kwargs)
+        main_ts = result_main.get("ts", "")
+        now_iso = datetime.now().isoformat()
 
-        result = client.chat_postMessage(**kwargs)
-        message_ts = result.get("ts", "")
+        # 2번 thread 메시지 — 1번 ts를 thread_ts로 (사용자 선택 thread가 아님)
+        topics_ts: Optional[str] = None
+        if topics_text:
+            result_topics = client.chat_postMessage(
+                channel=req.channel_id,
+                text=topics_text,
+                thread_ts=main_ts,
+            )
+            topics_ts = result_topics.get("ts", "")
 
-        # Upload .md file if requested — 검색은 EXPORT_DIR만 (백엔드가 항상 여기에 저장)
+        # 3번 .md 첨부 — 1번 ts를 thread_ts로 (현재 동작 유지, parent만 main_ts로)
         md_attached = False
         if req.attach_md:
             title_safe = re.sub(r'[<>:"/\\|?*]', '_', session.metadata.title or 'meeting')
@@ -289,31 +356,43 @@ def send_slack_message(req: SlackSendRequest):
                     channel=req.channel_id,
                     file=str(md_file),
                     filename=filename,
-                    thread_ts=message_ts,
+                    thread_ts=main_ts,
                 )
                 md_attached = True
 
         channel_info = client.conversations_info(channel=req.channel_id)
         channel_name = channel_info.get("channel", {}).get("name", req.channel_id)
 
-        # Update Meeting JSON with slack_sent info — 재전송 흐름(meeting_id로 호출)에서만 동작.
-        # 신규 작성 흐름은 sessions.py의 complete_session이 응답을 받아 Meeting 생성 시 포함하므로 여기서는 무동작.
+        # Build slack_sent dict for response + meeting JSON
+        slack_sent_dict = {
+            "channel_id": req.channel_id,
+            "channel_name": f"#{channel_name}",
+            "thread_ts": req.thread_ts,
+            "messages": {
+                "main": {"ts": main_ts, "text": main_text, "sent_at": now_iso},
+            },
+            # legacy fields — 구 코드(삭제/마스킹) 호환용으로 main ts 그대로 노출
+            "message_ts": main_ts,
+            "sent_at": now_iso,
+            "deleted": False,
+            "deleted_at": None,
+        }
+        if topics_text and topics_ts:
+            slack_sent_dict["messages"]["topics"] = {
+                "ts": topics_ts,
+                "text": topics_text,
+                "sent_at": now_iso,
+            }
+
+        # 재전송 흐름(mtg_*)에서는 meeting JSON 직접 갱신.
+        # 신규 작성 흐름은 sessions.py의 complete_session이 응답을 받아 Meeting 생성 시 포함.
         if req.session_id.startswith("mtg_"):
             import json as _j2
-            from datetime import datetime as _dt2
             meeting_path = MEETINGS_DIR / f"{req.session_id}.json"
             if meeting_path.exists():
                 try:
                     m_data = _j2.loads(meeting_path.read_text(encoding="utf-8"))
-                    m_data["slack_sent"] = {
-                        "channel_id": req.channel_id,
-                        "channel_name": f"#{channel_name}",
-                        "thread_ts": req.thread_ts,
-                        "message_ts": message_ts,
-                        "sent_at": _dt2.now().isoformat(),
-                        "deleted": False,
-                        "deleted_at": None,
-                    }
+                    m_data["slack_sent"] = slack_sent_dict
                     meeting_path.write_text(_j2.dumps(m_data, indent=2, ensure_ascii=False), encoding="utf-8")
                 except Exception:
                     pass
@@ -321,9 +400,12 @@ def send_slack_message(req: SlackSendRequest):
         return {
             "success": True,
             "channel_name": f"#{channel_name}",
-            "message_ts": message_ts,
+            "message_ts": main_ts,
+            "main_ts": main_ts,
+            "topics_ts": topics_ts,
             "thread_ts": req.thread_ts,
             "md_attached": md_attached if req.attach_md else None,
+            "slack_sent": slack_sent_dict,
         }
 
     except Exception as e:
@@ -339,6 +421,10 @@ class SlackUpdateRequest(BaseModel):
     channel_id: str
     message_ts: str
     text: str
+    # Phase 1B — 저장본 갱신용. meeting_id + message_key("main"|"topics") 함께 오면
+    # meeting JSON의 slack_sent.messages[message_key].text도 동기화.
+    meeting_id: Optional[str] = None
+    message_key: Optional[str] = None
 
 
 @router.patch("/message")
@@ -354,6 +440,26 @@ def update_slack_message(req: SlackUpdateRequest):
         if "cant_update_message" in error_str or "not_authed" in error_str:
             raise HTTPException(status_code=403, detail="수정 권한이 없습니다 (봇이 보낸 메시지만 수정 가능)")
         raise HTTPException(status_code=500, detail=f"수정 실패: {error_str}")
+
+    # meeting JSON 저장본 갱신 (선택적)
+    if req.meeting_id and req.message_key in ("main", "topics"):
+        import json as _j
+        from datetime import datetime as _dt
+        meeting_path = MEETINGS_DIR / f"{req.meeting_id}.json"
+        if meeting_path.exists():
+            try:
+                m_data = _j.loads(meeting_path.read_text(encoding="utf-8"))
+                slack_sent = m_data.get("slack_sent") or {}
+                messages = slack_sent.get("messages") or {}
+                entry = messages.get(req.message_key) or {"ts": req.message_ts, "sent_at": _dt.now().isoformat()}
+                entry["text"] = req.text
+                messages[req.message_key] = entry
+                slack_sent["messages"] = messages
+                m_data["slack_sent"] = slack_sent
+                meeting_path.write_text(_j.dumps(m_data, indent=2, ensure_ascii=False), encoding="utf-8")
+            except Exception:
+                pass
+
     return {"success": True, "message_ts": req.message_ts}
 
 
@@ -374,14 +480,19 @@ def delete_slack_message(req: SlackDeleteRequest):
             raise HTTPException(status_code=403, detail="삭제 권한이 없습니다 (봇이 보낸 메시지만 삭제 가능)")
         raise HTTPException(status_code=500, detail=f"삭제 실패: {error_str}")
 
-    # Update Meeting JSON if exists
+    # Update Meeting JSON if exists — 신규 구조(messages.main.ts) + 구 구조(message_ts) 둘 다 인식
     if MEETINGS_DIR.exists():
         meeting_files = list(MEETINGS_DIR.glob("*.json"))
         for mf in meeting_files:
             try:
                 data = _json.loads(mf.read_text(encoding="utf-8"))
                 slack_sent = data.get("slack_sent")
-                if slack_sent and slack_sent.get("message_ts") == req.message_ts:
+                if not slack_sent:
+                    continue
+                # 신규 구조 우선 확인, 없으면 legacy
+                main_ts = ((slack_sent.get("messages") or {}).get("main") or {}).get("ts")
+                legacy_ts = slack_sent.get("message_ts")
+                if main_ts == req.message_ts or legacy_ts == req.message_ts:
                     slack_sent["deleted"] = True
                     slack_sent["deleted_at"] = datetime.now().isoformat()
                     mf.write_text(_json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8")

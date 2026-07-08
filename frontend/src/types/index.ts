@@ -66,12 +66,22 @@ export interface ActionItem {
   source_topic: string | null;
 }
 
+export interface SlackMessageRecord {
+  ts: string;
+  text: string;
+  sent_at: string;
+}
+
 export interface SlackSentInfo {
   channel_id: string;
   channel_name: string;
   thread_ts: string | null;
-  message_ts: string;
-  sent_at: string;
+  // Phase 1B (2026-06-05) — multi-message 구조. 신규 전송은 이 dict 사용.
+  // key: "main" | "topics". 구 데이터에서는 빈 객체.
+  messages: Record<string, SlackMessageRecord>;
+  // Legacy fields — Phase 1B 이전 데이터 호환용.
+  message_ts: string | null;
+  sent_at: string | null;
   deleted: boolean;
   deleted_at: string | null;
 }

@@ -127,12 +127,42 @@ export default function SendSave() {
         }
       }
     }
-    const fuBullets = (session.action_items || []).map((item) => {
-      let line = item.assignee ? `• [@${item.assignee}] ${item.task}` : `• ${item.task}`;
+    // 같은 인물 task가 인접하도록 정렬 — backend _sort_action_items_by_assignee와 동일 로직
+    const items = [...(session.action_items || [])];
+    const firstSeen = new Map<string, number>();
+    items.forEach((item, idx) => {
+      const key = item.assignee || '￿';
+      if (!firstSeen.has(key)) firstSeen.set(key, idx);
+    });
+    items.sort((a, b) => (firstSeen.get(a.assignee || '￿')! - firstSeen.get(b.assignee || '￿')!));
+    const fuBullets = items.map((item) => {
+      let line = item.assignee ? `• [${item.assignee}님] ${item.task}` : `• ${item.task}`;
       if (item.deadline) line += ` ~${item.deadline}`;
       return line;
     });
     return `${header}\n\n📋 *핵심 요약*\n${summaryBullets.join('\n') || '(요약 없음)'}\n\n✅ *F/U 필요 사항*\n${fuBullets.join('\n') || '(없음)'}\n\n📎 전체 회의록 첨부`;
+  };
+
+  // 2번 thread 메시지 미리보기 — backend _build_topics_message와 동일 로직
+  const buildTopicsPreviewText = (): string => {
+    if (!session?.summary_markdown) return '';
+    const lines = session.summary_markdown.split('\n');
+    const out: string[] = [];
+    let inside = false;
+    for (const line of lines) {
+      const stripped = line.trim();
+      if (stripped.startsWith('## ')) {
+        if (inside) break;
+        if (stripped.includes('주요 논의')) {
+          inside = true;
+          out.push(line);
+          continue;
+        }
+      }
+      if (inside) out.push(line);
+    }
+    while (out.length && !out[out.length - 1].trim()) out.pop();
+    return out.join('\n').trim();
   };
 
   // Load thread messages when switching to thread mode
@@ -201,15 +231,7 @@ export default function SendSave() {
     }
 
     // 2. Slack 전송 (이제 .md 파일이 존재)
-    let slackSentPayload: {
-      channel_id: string;
-      channel_name: string;
-      thread_ts: string | null;
-      message_ts: string;
-      sent_at: string;
-      deleted: boolean;
-      deleted_at: string | null;
-    } | null = null;
+    let slackSentPayload: NonNullable<Awaited<ReturnType<typeof sendSlackMessage>>['slack_sent']> | null = null;
     if (sendSlack && selectedChannel) {
       setSlackStatus('loading');
       try {
@@ -222,10 +244,12 @@ export default function SendSave() {
         setSlackStatus('success');
         setSlackResult(`${result.channel_name} 전송 완료`);
         setSlackMessageTs(result.message_ts);
-        slackSentPayload = {
+        // backend 응답의 slack_sent dict(messages 포함)를 그대로 사용. fallback은 레거시 평탄 구조.
+        slackSentPayload = result.slack_sent || {
           channel_id: selectedChannel,
           channel_name: result.channel_name,
           thread_ts: result.thread_ts,
+          messages: {},
           message_ts: result.message_ts,
           sent_at: new Date().toISOString(),
           deleted: false,
@@ -587,8 +611,17 @@ export default function SendSave() {
                 {previewExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
               </button>
               {previewExpanded && session && (
-                <div className="bg-bg-subtle rounded-xl p-4 text-sm text-text whitespace-pre-wrap font-mono">
-                  {buildPreviewText()}
+                <div className="space-y-3">
+                  <div className="bg-bg-subtle rounded-xl p-4 text-sm text-text whitespace-pre-wrap font-mono">
+                    <div className="text-xs font-medium text-text-secondary mb-2 font-sans">1번 메인 메시지</div>
+                    {buildPreviewText()}
+                  </div>
+                  {buildTopicsPreviewText() && (
+                    <div className="bg-bg-subtle rounded-xl p-4 text-sm text-text whitespace-pre-wrap font-mono">
+                      <div className="text-xs font-medium text-text-secondary mb-2 font-sans">2번 thread 메시지 (주요 논의 + F/U)</div>
+                      {buildTopicsPreviewText()}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

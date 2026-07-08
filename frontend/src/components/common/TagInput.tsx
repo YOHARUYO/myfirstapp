@@ -32,7 +32,10 @@ export default function TagInput({ values, onChange, suggestions, placeholder, h
     onChange(values.filter((v) => v !== tag));
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    // IME 조합 중 Enter는 무시 (한글 마지막 글자가 별도 입력으로 처리되는 클래식 버그 차단).
+    // KeyboardEvent.isComposing은 React 타입에 없어 nativeEvent로 접근.
+    if (e.nativeEvent.isComposing) return;
     if (e.key === 'Enter' && input.trim()) {
       e.preventDefault();
       addTag(input);

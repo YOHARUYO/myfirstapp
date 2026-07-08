@@ -90,11 +90,17 @@ def extract_action_items(summary_markdown: str) -> list[dict]:
             fu_counter += 1
             text = line.strip()[2:].strip()
 
-            # Extract @assignee
+            # Extract [이름님] assignee — 2026-06-05 슬랙 포맷 개편 (Phase 1B).
+            # 신규 형식 우선, 구 데이터(@이름)는 fallback으로 인식 (재요약 시 자동 정상화).
             assignee = None
-            assignee_match = re.search(r"[@＠](\S+?)[\]\s]", text)
+            assignee_match = re.search(r"\[([^\[\]@＠]+?)님\]", text)
             if assignee_match:
                 assignee = assignee_match.group(1)
+            else:
+                legacy_match = re.search(r"[@＠](\S+?)[\]\s]", text)
+                if legacy_match:
+                    assignee = legacy_match.group(1)
+                    assignee_match = legacy_match
 
             # Extract ~deadline
             deadline = None

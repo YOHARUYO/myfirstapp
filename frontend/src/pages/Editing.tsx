@@ -378,7 +378,12 @@ export default function Editing() {
   const saveMetadata = async (field: string, value: any) => {
     if (!session) return;
     try {
-      await updateMetadata(session.session_id, { [field]: value });
+      if (editMode === 'meeting') {
+        // 재편집 모드 — meeting 엔드포인트는 {metadata: {field: value}} 래핑 필요
+        await api.patch(`/meetings/${session.session_id}`, { metadata: { [field]: value } });
+      } else {
+        await updateMetadata(session.session_id, { [field]: value });
+      }
     } catch {}
   };
 

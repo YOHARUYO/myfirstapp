@@ -31,6 +31,19 @@ export interface SlackSendResult {
   message_ts: string;
   thread_ts: string | null;
   md_attached: boolean | null;
+  // Phase 1B — multi-message 전송 결과
+  main_ts?: string;
+  topics_ts?: string | null;
+  slack_sent?: {
+    channel_id: string;
+    channel_name: string;
+    thread_ts: string | null;
+    messages: Record<string, { ts: string; text: string; sent_at: string }>;
+    message_ts: string;
+    sent_at: string;
+    deleted: boolean;
+    deleted_at: string | null;
+  };
 }
 
 export async function sendSlackMessage(
@@ -62,11 +75,15 @@ export async function updateSlackMessage(
   channelId: string,
   messageTs: string,
   text: string,
+  meetingId?: string,
+  messageKey?: 'main' | 'topics',
 ): Promise<{ success: boolean; message_ts: string }> {
   const res = await api.patch('/slack/message', {
     channel_id: channelId,
     message_ts: messageTs,
     text,
+    meeting_id: meetingId,
+    message_key: messageKey,
   });
   return res.data;
 }

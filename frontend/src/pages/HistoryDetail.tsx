@@ -33,7 +33,11 @@ export default function HistoryDetail() {
   const [tsMode, setTsMode] = useState<'relative' | 'absolute'>('relative');
   const [deleteModal, setDeleteModal] = useState(false);
   const [editMsgModal, setEditMsgModal] = useState(false);
-  const [editMsgText, setEditMsgText] = useState('');
+  const [editMainText, setEditMainText] = useState('');
+  const [editTopicsText, setEditTopicsText] = useState('');
+  const [editTopicsTs, setEditTopicsTs] = useState<string | null>(null);
+  const [editMainTs, setEditMainTs] = useState<string | null>(null);
+  const [editHasLegacy, setEditHasLegacy] = useState(false);
   const [deleteMeetingModal, setDeleteMeetingModal] = useState(false);
   const [audioModalOpen, setAudioModalOpen] = useState(false);
   const [audioFormat, setAudioFormat] = useState<'webm' | 'mp3'>('webm');
@@ -86,11 +90,61 @@ export default function HistoryDetail() {
     }
   };
 
+  const resolveMainTs = (slackSent: NonNullable<Meeting['slack_sent']>): string | null => {
+    const fromMessages = slackSent.messages?.main?.ts;
+    return fromMessages || slackSent.message_ts || null;
+  };
+
+  const openEditMessageModal = () => {
+    if (!meeting?.slack_sent) return;
+    const ss = meeting.slack_sent;
+    const mainMsg = ss.messages?.main;
+    const topicsMsg = ss.messages?.topics;
+    const hasNewStructure = !!mainMsg?.text;
+    setEditMainText(mainMsg?.text || '');
+    setEditTopicsText(topicsMsg?.text || '');
+    setEditMainTs(mainMsg?.ts || ss.message_ts || null);
+    setEditTopicsTs(topicsMsg?.ts || null);
+    setEditHasLegacy(!hasNewStructure);
+    setEditMsgModal(true);
+  };
+
+  const handleSaveEditedMessage = async () => {
+    if (!meeting?.slack_sent) return;
+    const ss = meeting.slack_sent;
+    try {
+      if (editMainTs) {
+        await updateSlackMessage(ss.channel_id, editMainTs, editMainText, meeting.meeting_id, 'main');
+      }
+      if (editTopicsTs && editTopicsText.trim()) {
+        await updateSlackMessage(ss.channel_id, editTopicsTs, editTopicsText, meeting.meeting_id, 'topics');
+      }
+      // 로컬 state 동기화
+      setMeeting({
+        ...meeting,
+        slack_sent: {
+          ...ss,
+          messages: {
+            ...(ss.messages || {}),
+            ...(editMainTs ? { main: { ts: editMainTs, text: editMainText, sent_at: ss.messages?.main?.sent_at || ss.sent_at || '' } } : {}),
+            ...(editTopicsTs && editTopicsText.trim() ? { topics: { ts: editTopicsTs, text: editTopicsText, sent_at: ss.messages?.topics?.sent_at || ss.sent_at || '' } } : {}),
+          },
+        },
+      });
+      showToast('메시지 수정 완료');
+      setEditMsgModal(false);
+    } catch (e: any) {
+      showToast(e?.response?.data?.detail || '수정 실패 — 권한이 없습니다');
+    }
+  };
+
   const handleDeleteSlackMessage = async () => {
     if (!meeting?.slack_sent) return;
+    const mainTs = resolveMainTs(meeting.slack_sent);
+    if (!mainTs) return;
     setDeleteModal(false);
     try {
-      await deleteSlackMessage(meeting.slack_sent.channel_id, meeting.slack_sent.message_ts);
+      await deleteSlackMessage(meeting.slack_sent.channel_id, mainTs);
       setMeeting({
         ...meeting,
         slack_sent: { ...meeting.slack_sent, deleted: true, deleted_at: new Date().toISOString() },
@@ -206,7 +260,7 @@ export default function HistoryDetail() {
           {!slackSent.deleted && (
             <div className="mt-2 flex gap-4">
               <button
-                onClick={() => { setEditMsgText(''); setEditMsgModal(true); }}
+                onClick={openEditMessageModal}
                 className="flex items-center gap-1.5 text-sm text-text-tertiary hover:text-primary cursor-pointer"
               >
                 <Pencil size={14} />
@@ -422,24 +476,33 @@ export default function HistoryDetail() {
         </div>
       </div>
 
-      {/* Edit Slack message modal */}
+      {/* Edit Slack message modal — main + topics 양쪽 prefill·편집 */}
       <Modal open={editMsgModal} onClose={() => setEditMsgModal(false)}>
         <h3 className="text-lg font-semibold text-text mb-2">메시지 수정</h3>
-        <textarea value={editMsgText} onChange={(e) => setEditMsgText(e.target.value)}
-          className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[120px]" rows={6} />
+        {editHasLegacy && (
+          <p className="text-xs text-text-tertiary mb-3">
+            이 회의는 이전 메시지 텍스트가 저장되지 않아 prefill을 제공하지 않습니다. 직접 작성해주세요.
+          </p>
+        )}
+        <div className="space-y-3">
+          <div>
+            <label className="text-xs font-medium text-text-secondary block mb-1">1번 메인 메시지</label>
+            <textarea value={editMainText} onChange={(e) => setEditMainText(e.target.value)}
+              className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[120px]" rows={6} />
+          </div>
+          {editTopicsTs && (
+            <div>
+              <label className="text-xs font-medium text-text-secondary block mb-1">2번 thread 메시지 (주요 논의 + F/U)</label>
+              <textarea value={editTopicsText} onChange={(e) => setEditTopicsText(e.target.value)}
+                className="w-full bg-bg-subtle rounded-lg px-4 py-3 text-sm focus:bg-bg focus:ring-2 focus:ring-primary focus:outline-none resize-y min-h-[100px]" rows={5} />
+            </div>
+          )}
+        </div>
         <div className="flex gap-2 justify-end mt-4">
           <button onClick={() => setEditMsgModal(false)}
             className="px-4 py-2 text-sm font-medium text-text bg-bg-subtle rounded-lg hover:bg-bg-hover cursor-pointer">취소</button>
-          <button onClick={async () => {
-            if (!meeting?.slack_sent) return;
-            try {
-              await updateSlackMessage(meeting.slack_sent.channel_id, meeting.slack_sent.message_ts, editMsgText);
-              showToast('메시지 수정 완료');
-              setEditMsgModal(false);
-            } catch (e: any) {
-              showToast(e?.response?.data?.detail || '수정 실패 — 권한이 없습니다');
-            }
-          }} className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">저장</button>
+          <button onClick={handleSaveEditedMessage}
+            className="px-4 py-2 text-sm font-medium text-bg bg-primary rounded-lg hover:bg-primary-hover cursor-pointer">저장</button>
         </div>
       </Modal>
 
